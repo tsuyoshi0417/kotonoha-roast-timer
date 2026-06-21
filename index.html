@@ -149,6 +149,8 @@
     #tabDuring .chargerow{margin:2px 0}
     #tabDuring .chargerow input{padding:3px 6px;font-size:14px}
     #tabDuring .chargerow label{font-size:11px}
+    /* 投入カウントダウンの案内文＝iPadでは隠す（1画面維持。意味はスマホ/初回で伝わる）*/
+    #tabDuring .panel.sticky .note{display:none}
     /* 節目（左）＝カードのpadding/gapだけ詰める。ボタンmin-height56pxは死守 */
     #tabDuring .events{gap:3px}
     #tabDuring .events.big .ev{padding:2px;gap:2px}
@@ -238,7 +240,10 @@
         <div class="chargerow" style="display:flex;align-items:center;gap:8px;margin:6px 0 2px">
           <label for="chargeTemp" style="margin:0;flex:0 0 auto;white-space:nowrap">投入温度(℃)</label>
           <input id="chargeTemp" type="number" inputmode="decimal" value="160" style="flex:1;min-width:0;padding:8px;text-align:center">
+          <label for="chargeOffset" style="margin:0;flex:0 0 auto;white-space:nowrap">投入まで(秒)</label>
+          <input id="chargeOffset" type="number" inputmode="numeric" value="30" min="0" style="flex:0 0 64px;min-width:0;padding:8px;text-align:center">
         </div>
+        <div class="note" style="margin:2px 0 0">「スタート」前に <b>投入</b> を押すと、設定秒のカウントダウン後に0:00開始（その間に釜外し→豆投入→チューブ接続）。0なら即時投入。</div>
         <div class="toggle"><input type="checkbox" id="beep"><label for="beep" style="margin:0">30秒ごとに音で知らせる</label></div>
         <div class="toggle"><input type="checkbox" id="bakeOn" checked><label for="bakeOn" style="margin:0">長丁場のとき“ベイク注意”を出す</label></div>
       </div>
@@ -382,6 +387,8 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   ];
   var running=false,t0=0,elapsed=0,tick=null,lastBeep=0,wakeLock=null;
   var marks={},temps={},cards={},cardsA={},selProc="",selHeat="",series=[],flames=[];
+  /* 投入カウントダウン（投入オフセット）の状態 */
+  var cdActive=false, cdEnd=0, cdTick=null, chargeOffsetUsed=0;
 
   /* ---- 選択式チップ（精製・火力）---- */
   function getProc(){ if(selProc==="その他"){var o=$("procOther").value;return o?o:"その他";} return selProc; }
@@ -433,20 +440,77 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
       })(EVENTS[j]);}
     }
   }
+  /* ---- 投入オフセット（カウントダウン）----
+     投入の0:00を"本当の豆が回り出した瞬間"に合わせる。
+     作業前に1回「投入」を押す→設定秒のカウントダウン→0でdoCharge()＝0:00開始。
+     カウントダウン中にもう一度押す/リセットでキャンセル。オフセット0なら即時投入。 */
+  function chargeOffsetSec(){
+    var v=parseInt($("chargeOffset")?$("chargeOffset").value:"0",10);
+    if(isNaN(v)||v<0)v=0; return v;
+  }
+  function startCountdown(sec){
+    cancelCountdown(); // 念のため前のを止める
+    cdActive=true; cdEnd=nowSec()+sec;
+    showMode("roast"); showTab("during");
+    cdLoop(); // 即時に初回表示
+    cdTick=setInterval(cdLoop,100);
+  }
+  function cdLoop(){
+    if(!cdActive)return;
+    var left=cdEnd-nowSec();
+    if(left<=0){
+      cancelCountdown();
+      doCharge(); // 0になった瞬間＝本当の投入
+      return;
+    }
+    $("timer").textContent="投入まで "+Math.ceil(left);
+  }
+  function cancelCountdown(){
+    cdActive=false;
+    if(cdTick){clearInterval(cdTick);cdTick=null;}
+  }
+  function doCharge(){
+    resetTime();marks.charge=0;chargeOffsetUsed=chargeOffsetSec();
+    /* 投入温度を温度カーブの開始点(t=0)に置く＝カーブが投入温度から始まる。
+       以降の現在温度＋3/＋5/＋10はその上に積む。temps.chargeにも入れて焙煎後の投入温度欄へ反映 */
+    var ct=num("chargeTemp");
+    if(ct!==null){
+      series=[{t:0,temp:ct}]; temps.charge=String(ct); $("curTemp").value=ct;
+      /* 焙煎後の投入温度欄にも即反映（renderEventsの再描画を待たない）*/
+      var caC=cardsA.charge; if(caC){ var inpC=caC.div.querySelector("input"); if(inpC)inpC.value=ct; }
+    }
+    if(!running)startRun();showMode("roast");showTab("during");drawGraph();
+    /* 投入カードを記録済みに（mark下部の共通更新と同じ見た目に）*/
+    var cC=cards.charge;
+    if(cC){cC.div.className="ev done";cC.t.textContent=fmt(0);cC.btn.textContent="記録し直す";}
+    var caC2=cardsA.charge;
+    if(caC2){caC2.div.className="ev done";caC2.t.textContent=fmt(0);caC2.btn.textContent="記録し直す";}
+    recalc();updateLiveDtr();updateBakeWarn();
+  }
   function mark(key){
     if(key==="charge"){
-      resetTime();marks.charge=0;
-      /* 投入温度を温度カーブの開始点(t=0)に置く＝カーブが投入温度から始まる。
-         以降の現在温度＋3/＋5/＋10はその上に積む。temps.chargeにも入れて焙煎後の投入温度欄へ反映 */
-      var ct=num("chargeTemp");
-      if(ct!==null){
-        series=[{t:0,temp:ct}]; temps.charge=String(ct); $("curTemp").value=ct;
-        /* 焙煎後の投入温度欄にも即反映（renderEventsの再描画を待たない）*/
-        var caC=cardsA.charge; if(caC){ var inpC=caC.div.querySelector("input"); if(inpC)inpC.value=ct; }
-      }
-      if(!running)startRun();showMode("roast");showTab("during");drawGraph();
+      /* カウントダウン中にもう一度「投入」＝キャンセル（押し直しで仕切り直せる）*/
+      if(cdActive){ cancelCountdown(); $("timer").textContent=fmt(elapsed); return; }
+      var off=chargeOffsetSec();
+      if(off>0 && marks.charge===undefined){ startCountdown(off); return; } // 未投入＋オフセット有＝カウントダウン
+      doCharge(); // オフセット0、または記録し直し＝即時投入
+      return;
     }
-    else{marks[key]=elapsed;if(key==="drop"){stopRun();showTab("after");}}
+    else{
+      marks[key]=elapsed;
+      /* 節目タップで「現在温度」欄に値があれば、その節目の温度に自動コピー＋
+         温度カーブにもその時刻の点を追加（中点・1ハゼ等のRoR起点になる最重要情報を取り逃さない）。
+         空なら時刻だけ（従来動作）。投入(charge)は上の分岐で別処理ゆえここには来ない。 */
+      var cv=num("curTemp");
+      if(cv!==null){
+        temps[key]=String(cv);
+        series.push({t:Math.round(elapsed),temp:cv});
+        drawGraph();
+        /* 焙煎後の温度入力欄にも即反映（renderEvents再描画を待たない）*/
+        var caT=cardsA[key]; if(caT){ var inpT=caT.div.querySelector("input"); if(inpT)inpT.value=cv; }
+      }
+      if(key==="drop"){stopRun();showTab("after");}
+    }
     var c=cards[key];
     if(c){c.div.className="ev done";c.t.textContent=fmt(marks[key]);c.btn.textContent="記録し直す";}
     var ca=cardsA[key];
@@ -577,13 +641,14 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   }
   function resetAll(){
     if(!confirm("今の入力を全部消して新しい焙煎を始める？"))return;
+    cancelCountdown();chargeOffsetUsed=0;
     stopRun();elapsed=0;marks={};temps={};
     $("bean").value="";$("roasted").value="";$("memo").value="";
     $("green").value="150";$("room").value="20";
     selProc="";$("procOther").value="";$("procOther").style.display="none";
     selHeat="";
     var all=document.querySelectorAll(".chip");for(var k=0;k<all.length;k++)all[k].classList.remove("sel");
-    series=[];flames=[];$("curTemp").value="";$("chargeTemp").value="160";
+    series=[];flames=[];$("curTemp").value="";$("chargeTemp").value="160";$("chargeOffset").value="30";
     $("timer").textContent="00:00";renderEvents();recalc();onBeanChange();updateLiveDtr();updateBakeWarn();
     showTab("before");
   }
@@ -610,7 +675,8 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     var now=new Date(), bean=$("bean").value, day=ymdSafe(now), lot=lotFor(bean,day);
     var o={date:now.toLocaleString("ja-JP"),day:day,bean:bean,lot:lot,
       id:String(bean)+"|"+day+"|"+lot,proc:getProc(),
-      green:nn(g),roasted:nn(r),loss:loss,room:$("room").value,heat:getHeat(),dtr:dtr,memo:$("memo").value};
+      green:nn(g),roasted:nn(r),loss:loss,room:$("room").value,heat:getHeat(),dtr:dtr,memo:$("memo").value,
+      chargeOffset:chargeOffsetUsed};
     for(var i=0;i<EVENTS.length;i++){var k=EVENTS[i].key;o[k]=nn(marks[k]);o[k+"T"]=nn(temps[k]);}
     o.curve=series.slice();
     o.flames=flames.slice();
@@ -675,12 +741,12 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     var rows=[collect()].concat(getList());
     var head=["日付","豆","ロット","ID","精製","生豆量g","焙煎後g","重量減%","室温","火力"];
     for(var i=0;i<EVENTS.length;i++){head.push(EVENTS[i].name+"[秒]");head.push(EVENTS[i].name+"温度");}
-    head.push("DTR%");head.push("メモ");
+    head.push("DTR%");head.push("投入オフセット秒");head.push("メモ");
     var lines=[head.join(",")];
     for(var r=0;r<rows.length;r++){var x=rows[r];
       var row=[x.date,x.bean,nn(x.lot),nn(x.id),x.proc,x.green,x.roasted,x.loss,x.room,x.heat];
       for(var i=0;i<EVENTS.length;i++){row.push(x[EVENTS[i].key]);row.push(x[EVENTS[i].key+"T"]);}
-      row.push(x.dtr);row.push(String(x.memo||"").replace(/[\n,]/g," "));
+      row.push(x.dtr);row.push(nn(x.chargeOffset));row.push(String(x.memo||"").replace(/[\n,]/g," "));
       lines.push(row.join(","));}
     var blob=new Blob(["﻿"+lines.join("\n")],{type:"text/csv"});
     var a=document.createElement("a");a.href=URL.createObjectURL(blob);
