@@ -242,7 +242,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     {key:"sc",name:"2ハゼ開始"},{key:"drop",name:"煎り止め"}
   ];
   var running=false,t0=0,elapsed=0,tick=null,lastBeep=0,wakeLock=null;
-  var marks={},temps={},cards={},cardsA={},selProc="",selHeat="",series=[];
+  var marks={},temps={},cards={},cardsA={},selProc="",selHeat="",series=[],flames=[];
 
   /* ---- 選択式チップ（精製・火力）---- */
   function getProc(){ if(selProc==="その他"){var o=$("procOther").value;return o?o:"その他";} return selProc; }
@@ -370,7 +370,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     selProc="";$("procOther").value="";$("procOther").style.display="none";
     selHeat="";
     var all=document.querySelectorAll(".chip");for(var k=0;k<all.length;k++)all[k].classList.remove("sel");
-    series=[];$("curTemp").value="";
+    series=[];flames=[];$("curTemp").value="";
     $("timer").textContent="00:00";renderEvents();recalc();onBeanChange();updateLiveDtr();
     showTab("before");
   }
@@ -400,6 +400,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
       green:nn(g),roasted:nn(r),loss:loss,room:$("room").value,heat:getHeat(),dtr:dtr,memo:$("memo").value};
     for(var i=0;i<EVENTS.length;i++){var k=EVENTS[i].key;o[k]=nn(marks[k]);o[k+"T"]=nn(temps[k]);}
     o.curve=series.slice();
+    o.flames=flames.slice();
     return o;
   }
   function getList(){try{return JSON.parse(localStorage.getItem("cotonoha_roasts")||"[]");}catch(e){return [];}}
@@ -525,6 +526,24 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     /* 節目ライン（1ハゼ・煎り止め）*/
     var evk=["fc","drop"];
     for(i=0;i<evk.length;i++){ var mk=marks[evk[i]]; if(mk!==undefined){ x.strokeStyle="rgba(205,138,78,.45)"; x.lineWidth=1; x.beginPath(); var xx=PX(mk); x.moveTo(xx,padT); x.lineTo(xx,padT+pH); x.stroke(); } }
+    /* 火力変更マーカー＝ティール/青系の縦線（節目のaccent色と混同しないよう別色）＋下部に小ラベル */
+    if(flames.length>0){
+      var fx, prevLabelX=-999, lab;
+      x.font="9px sans-serif";
+      for(i=0;i<flames.length;i++){
+        fx=PX(flames[i].t);
+        x.strokeStyle="rgba(90,170,180,.55)"; x.lineWidth=1; x.setLineDash([3,3]);
+        x.beginPath(); x.moveTo(fx,padT); x.lineTo(fx,padT+pH); x.stroke();
+        x.setLineDash([]);
+        lab=String(flames[i].level||"");
+        /* ラベルが詰まりすぎたら間引く（直前ラベルと近すぎたら出さない）*/
+        if(fx-prevLabelX>=14){
+          x.fillStyle="rgba(120,200,210,.95)";
+          x.fillText(lab, Math.min(fx+1, padL+pW-12), padT+pH-2);
+          prevLabelX=fx;
+        }
+      }
+    }
     /* 現在カーブ＝濃く前面に */
     if(series.length>0){
       x.strokeStyle="#e0a96a"; x.lineWidth=2; x.beginPath();
@@ -631,7 +650,18 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
 
   /* ---- 初期化 ---- */
   setupChips("procChips",function(v){selProc=v;$("procOther").style.display=(v==="その他")?"block":"none";});
-  setupChips("heatChips",function(v){selHeat=v;});
+  setupChips("heatChips",function(v){
+    selHeat=v;
+    /* タイマー稼働中 or 経過>0 のときだけ「いつ火力を変えたか」をログ。
+       直前と同じ火力なら重複pushしない。スタート前のタップは初期火力＝記録しない。*/
+    if(running||elapsed>0){
+      var last=flames.length?flames[flames.length-1]:null;
+      if(!last||last.level!==v){
+        flames.push({t:Math.round(elapsed),level:v});
+        drawGraph();
+      }
+    }
+  });
   $("startBtn").addEventListener("click",toggleRun);
   $("resetBtn").addEventListener("click",resetAll);
   $("saveBtn").addEventListener("click",saveRoast);
