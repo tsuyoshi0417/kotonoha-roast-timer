@@ -15,6 +15,9 @@
   body{margin:0;background:var(--bg);color:var(--ink);
     font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;
     padding:14px;max-width:760px;margin:0 auto}
+  /* 狭い画面（スマホ）＝今まで通り1カラム縦並び。.app/.col は素通し */
+  .app{display:block}
+  .col{display:block}
   h1{font-size:18px;font-weight:700;margin:2px 0 2px;letter-spacing:.04em}
   .tag{color:var(--sub);font-size:12px;margin-bottom:12px}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
@@ -57,6 +60,17 @@
   .note b{color:var(--ink)}
   .err{display:none;background:#3a1c16;border:1px solid var(--warn);color:#f6d9cf;
     padding:10px;border-radius:10px;font-size:12px;margin-bottom:12px;white-space:pre-wrap}
+
+  /* 広い画面（iPad横/縦・PC）＝2カラム。左＝焼く時に使う物／右＝設定と前後 */
+  @media (min-width:820px){
+    body{max-width:1120px}
+    .app{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+    .col{min-width:0}
+    /* パネル下の余白はグリッドのgapに任せ、列の最後のパネルは詰める */
+    .col .panel:last-child{margin-bottom:0}
+    /* タイマーは左カラム上部でsticky（焼きながら常に見える）*/
+    .panel.sticky{top:14px}
+  }
 </style>
 <!-- Firebase compat CDN（プレーンHTML用・安定版に固定）。読込失敗してもアプリ本体は動く（下のJSがtry/catchで隔離） -->
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
@@ -68,95 +82,107 @@
   <h1>言ノ葉 焙煎タイマー <span style="color:var(--sub);font-size:12px">v0</span></h1>
   <div class="tag">珈悦（こうえつ）陶器・遠赤外線 250g｜まず焙煎を本物に</div>
 
-  <div class="panel" id="syncPanel" style="display:none">
-    <div class="syncrow" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <span id="syncState" class="hist" style="flex:1;min-width:140px">クラウド同期：未ログイン</span>
-      <button type="button" id="loginBtn" style="flex:0 0 auto;width:auto;padding:10px 16px">Googleでログイン</button>
-      <button type="button" id="logoutBtn" style="display:none;flex:0 0 auto;width:auto;padding:10px 16px;background:transparent;color:var(--sub)">ログアウト</button>
-    </div>
-    <div class="note" id="syncNote">ログインすると全端末で同じ焙煎データが見られて消えません（オフラインは今まで通り端末内に保存）。</div>
-  </div>
+  <div class="app">
+    <!-- 左カラム＝焼いてる時に使う物（タイマー／温度カーブ／節目）。広い画面では一画面に集約 -->
+    <div class="col col-left" id="colLeft">
 
-  <div class="panel sticky">
-    <div class="timer" id="timer">00:00</div>
-    <div class="ctrl">
-      <button class="start" id="startBtn" type="button">スタート</button>
-      <button class="reset" id="resetBtn" type="button">リセット</button>
-    </div>
-    <div class="toggle"><input type="checkbox" id="beep"><label for="beep" style="margin:0">30秒ごとに音で知らせる</label></div>
-  </div>
-
-  <div class="panel">
-    <label>温度カーブ（随時更新）</label>
-    <canvas id="graph" style="width:100%;height:170px;display:block"></canvas>
-    <div style="margin-top:10px"><label>現在温度 (℃)</label><input id="curTemp" type="number" inputmode="decimal" placeholder="まず今の温度を入れる"></div>
-    <div class="ctrl" style="margin-top:8px">
-      <button type="button" id="p3">＋3℃</button>
-      <button type="button" id="p5">＋5℃</button>
-      <button type="button" id="p10">＋10℃</button>
-    </div>
-    <div class="ctrl" style="margin-top:8px">
-      <button type="button" id="pNow">この値で記録（針を読んで補正）</button>
-    </div>
-    <div class="note">上がるごとにタップで点を記録。序盤は＋5/＋10、<b>1ハゼ〜2ハゼの大事な所は＋3</b>で細かく。タップを飛ばすと絶対温度がズレるので、時々「この値で記録」で実測の針を読んで補正。</div>
-  </div>
-
-  <div class="panel">
-    <div><label>豆（産地/銘柄）</label><input id="bean" list="beanList" autocomplete="off" placeholder="例）エチオピア イルガチェフェ"><datalist id="beanList"></datalist>
-      <div class="note" id="beanHint" style="display:none">同じ豆の過去カーブを薄く重ねて表示中（背面）。</div></div>
-    <div style="margin-top:10px">
-      <label>精製</label>
-      <div class="chips" id="procChips">
-        <button type="button" class="chip" data-v="ウォッシュト">ウォッシュト</button>
-        <button type="button" class="chip" data-v="ナチュラル">ナチュラル</button>
-        <button type="button" class="chip" data-v="ハニー">ハニー</button>
-        <button type="button" class="chip" data-v="アナエロビック">アナエロビック</button>
-        <button type="button" class="chip" data-v="その他">その他</button>
+      <div class="panel sticky">
+        <div class="timer" id="timer">00:00</div>
+        <div class="ctrl">
+          <button class="start" id="startBtn" type="button">スタート</button>
+          <button class="reset" id="resetBtn" type="button">リセット</button>
+        </div>
+        <div class="toggle"><input type="checkbox" id="beep"><label for="beep" style="margin:0">30秒ごとに音で知らせる</label></div>
       </div>
-      <input id="procOther" style="display:none;margin-top:8px" placeholder="その他の精製を入力">
-    </div>
-    <div class="row" style="margin-top:10px">
-      <div><label>生豆量 (g)</label><input id="green" type="number" inputmode="decimal" value="150"></div>
-      <div><label>室温 (℃)</label><input id="room" type="number" inputmode="decimal" value="20"></div>
-    </div>
-    <div style="margin-top:10px">
-      <label>火力</label>
-      <div class="chips" id="heatChips">
-        <button type="button" class="chip" data-v="弱">弱</button>
-        <button type="button" class="chip" data-v="中弱">中弱</button>
-        <button type="button" class="chip" data-v="中">中</button>
-        <button type="button" class="chip" data-v="中強">中強</button>
-        <button type="button" class="chip" data-v="強">強</button>
+
+      <div class="panel">
+        <label>温度カーブ（随時更新）</label>
+        <canvas id="graph" style="width:100%;height:170px;display:block"></canvas>
+        <div style="margin-top:10px"><label>現在温度 (℃)</label><input id="curTemp" type="number" inputmode="decimal" placeholder="まず今の温度を入れる"></div>
+        <div class="ctrl" style="margin-top:8px">
+          <button type="button" id="p3">＋3℃</button>
+          <button type="button" id="p5">＋5℃</button>
+          <button type="button" id="p10">＋10℃</button>
+        </div>
+        <div class="ctrl" style="margin-top:8px">
+          <button type="button" id="pNow">この値で記録（針を読んで補正）</button>
+        </div>
+        <div class="note">上がるごとにタップで点を記録。序盤は＋5/＋10、<b>1ハゼ〜2ハゼの大事な所は＋3</b>で細かく。タップを飛ばすと絶対温度がズレるので、時々「この値で記録」で実測の針を読んで補正。</div>
       </div>
-    </div>
-  </div>
 
-  <div class="panel">
-    <label style="margin-bottom:8px">節目（焼きながらタップ＝その時刻を記録。温度は後から入れてもOK）</label>
-    <div class="events" id="events"></div>
-  </div>
+      <div class="panel">
+        <label style="margin-bottom:8px">節目（焼きながらタップ＝その時刻を記録。温度は後から入れてもOK）</label>
+        <div class="events" id="events"></div>
+      </div>
 
-  <div class="panel">
-    <label>焼き上がり</label>
-    <div class="row">
-      <div><label>焙煎後 (g)</label><input id="roasted" type="number" inputmode="decimal" placeholder="例）126"></div>
     </div>
-    <div style="margin-top:10px">
-      <div class="stat"><span>重量減%</span><b id="loss">—</b></div>
-      <div class="stat"><span>全焙煎時間</span><b id="total">—</b></div>
-      <div class="stat"><span>DTR%（発達率）</span><b id="dtr">—</b></div>
-    </div>
-    <div style="margin-top:10px"><label>メモ（匂い・色・次回への一手）</label><textarea id="memo" rows="2"></textarea></div>
-    <div class="acts">
-      <button class="save" id="saveBtn" type="button">この焙煎を保存</button>
-      <button id="csvBtn" type="button">CSV出力</button>
-    </div>
-    <div class="note">※保存先＝<b>この端末のブラウザの中だけ（localStorage）</b>。Safariの履歴削除や端末の空き容量不足で<b>消えることがある</b>。だから<b>CSV出力が本当のバックアップ</b>。サーバー・クラウドには一切送らない。</div>
-  </div>
 
-  <div class="panel">
-    <label>保存した焙煎（新しい順）</label>
-    <div class="hist" id="hist">まだ無し</div>
+    <!-- 右カラム＝設定と前後（同期／豆・条件／焼き上がり／履歴） -->
+    <div class="col col-right" id="colRight">
+
+      <div class="panel" id="syncPanel" style="display:none">
+        <div class="syncrow" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span id="syncState" class="hist" style="flex:1;min-width:140px">クラウド同期：未ログイン</span>
+          <button type="button" id="loginBtn" style="flex:0 0 auto;width:auto;padding:10px 16px">Googleでログイン</button>
+          <button type="button" id="logoutBtn" style="display:none;flex:0 0 auto;width:auto;padding:10px 16px;background:transparent;color:var(--sub)">ログアウト</button>
+        </div>
+        <div class="note" id="syncNote">ログインすると全端末で同じ焙煎データが見られて消えません（オフラインは今まで通り端末内に保存）。</div>
+      </div>
+
+      <div class="panel">
+        <div><label>豆（産地/銘柄）</label><input id="bean" list="beanList" autocomplete="off" placeholder="例）エチオピア イルガチェフェ"><datalist id="beanList"></datalist>
+          <div class="note" id="beanHint" style="display:none">同じ豆の過去カーブを薄く重ねて表示中（背面）。</div></div>
+        <div style="margin-top:10px">
+          <label>精製</label>
+          <div class="chips" id="procChips">
+            <button type="button" class="chip" data-v="ウォッシュト">ウォッシュト</button>
+            <button type="button" class="chip" data-v="ナチュラル">ナチュラル</button>
+            <button type="button" class="chip" data-v="ハニー">ハニー</button>
+            <button type="button" class="chip" data-v="アナエロビック">アナエロビック</button>
+            <button type="button" class="chip" data-v="その他">その他</button>
+          </div>
+          <input id="procOther" style="display:none;margin-top:8px" placeholder="その他の精製を入力">
+        </div>
+        <div class="row" style="margin-top:10px">
+          <div><label>生豆量 (g)</label><input id="green" type="number" inputmode="decimal" value="150"></div>
+          <div><label>室温 (℃)</label><input id="room" type="number" inputmode="decimal" value="20"></div>
+        </div>
+        <div style="margin-top:10px">
+          <label>火力</label>
+          <div class="chips" id="heatChips">
+            <button type="button" class="chip" data-v="弱">弱</button>
+            <button type="button" class="chip" data-v="中弱">中弱</button>
+            <button type="button" class="chip" data-v="中">中</button>
+            <button type="button" class="chip" data-v="中強">中強</button>
+            <button type="button" class="chip" data-v="強">強</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <label>焼き上がり</label>
+        <div class="row">
+          <div><label>焙煎後 (g)</label><input id="roasted" type="number" inputmode="decimal" placeholder="例）126"></div>
+        </div>
+        <div style="margin-top:10px">
+          <div class="stat"><span>重量減%</span><b id="loss">—</b></div>
+          <div class="stat"><span>全焙煎時間</span><b id="total">—</b></div>
+          <div class="stat"><span>DTR%（発達率）</span><b id="dtr">—</b></div>
+        </div>
+        <div style="margin-top:10px"><label>メモ（匂い・色・次回への一手）</label><textarea id="memo" rows="2"></textarea></div>
+        <div class="acts">
+          <button class="save" id="saveBtn" type="button">この焙煎を保存</button>
+          <button id="csvBtn" type="button">CSV出力</button>
+        </div>
+        <div class="note">※保存先＝<b>この端末のブラウザの中だけ（localStorage）</b>。Safariの履歴削除や端末の空き容量不足で<b>消えることがある</b>。だから<b>CSV出力が本当のバックアップ</b>。サーバー・クラウドには一切送らない。</div>
+      </div>
+
+      <div class="panel">
+        <label>保存した焙煎（新しい順）</label>
+        <div class="hist" id="hist">まだ無し</div>
+      </div>
+
+    </div>
   </div>
 
 <script>
