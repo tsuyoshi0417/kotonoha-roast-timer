@@ -86,7 +86,8 @@
   </div>
 
   <div class="panel">
-    <div><label>豆（産地/銘柄）</label><input id="bean" placeholder="例）エチオピア イルガチェフェ"></div>
+    <div><label>豆（産地/銘柄）</label><input id="bean" list="beanList" autocomplete="off" placeholder="例）エチオピア イルガチェフェ"><datalist id="beanList"></datalist>
+      <div class="note" id="beanHint" style="display:none">同じ豆の過去カーブを薄く重ねて表示中（背面）。</div></div>
     <div style="margin-top:10px">
       <label>精製</label>
       <div class="chips" id="procChips">
@@ -239,7 +240,20 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     selHeat="";
     var all=document.querySelectorAll(".chip");for(var k=0;k<all.length;k++)all[k].classList.remove("sel");
     series=[];$("curTemp").value="";
-    $("timer").textContent="00:00";renderEvents();recalc();drawGraph();
+    $("timer").textContent="00:00";renderEvents();recalc();onBeanChange();
+  }
+
+  /* ---- ロット番号＆ID（同じ豆・同じ日で何回目か＝将来カッピング結果を紐付ける鍵）---- */
+  function ymdSafe(d){ // Dateオブジェクト→ローカル日付YYYY-MM-DD（端末のタイムゾーン基準）
+    var y=d.getFullYear(),m=("0"+(d.getMonth()+1)).slice(-2),da=("0"+d.getDate()).slice(-2);
+    return y+"-"+m+"-"+da;
+  }
+  function lotFor(bean,day){ // 既存レコードを走査し、同じ豆名・同じ日付の件数＋1を返す
+    var list=getList(),n=0,b=String(bean||"");
+    for(var i=0;i<list.length;i++){
+      if(String(list[i].bean||"")===b && String(list[i].day||"")===day){ n++; }
+    }
+    return n+1;
   }
 
   /* ---- 保存・出力（全節目の時刻＋温度を保持）---- */
@@ -248,31 +262,46 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     var loss=(g&&r&&g>0)?((g-r)/g*100).toFixed(1):"";
     var drop=marks.drop,fc=marks.fc;
     var dtr=(drop!==undefined&&fc!==undefined&&drop>0)?((drop-fc)/drop*100).toFixed(1):"";
-    var o={date:new Date().toLocaleString("ja-JP"),bean:$("bean").value,proc:getProc(),
+    var now=new Date(), bean=$("bean").value, day=ymdSafe(now), lot=lotFor(bean,day);
+    var o={date:now.toLocaleString("ja-JP"),day:day,bean:bean,lot:lot,
+      id:String(bean)+"|"+day+"|"+lot,proc:getProc(),
       green:nn(g),roasted:nn(r),loss:loss,room:$("room").value,heat:getHeat(),dtr:dtr,memo:$("memo").value};
     for(var i=0;i<EVENTS.length;i++){var k=EVENTS[i].key;o[k]=nn(marks[k]);o[k+"T"]=nn(temps[k]);}
     o.curve=series.slice();
     return o;
   }
   function getList(){try{return JSON.parse(localStorage.getItem("cotonoha_roasts")||"[]");}catch(e){return [];}}
+
+  /* ---- 豆名オートコンプリート（過去レコードのユニーク一覧）---- */
+  function refreshBeanList(){
+    var dl=$("beanList"); if(!dl)return;
+    var list=getList(),seen={},names=[];
+    for(var i=0;i<list.length;i++){
+      var b=String(list[i].bean||"");
+      if(b!==""&&!seen[b]){seen[b]=1;names.push(b);}
+    }
+    dl.innerHTML="";
+    for(var j=0;j<names.length;j++){var op=document.createElement("option");op.value=names[j];dl.appendChild(op);}
+  }
   function saveRoast(){var list=getList();list.unshift(collect());
     try{localStorage.setItem("cotonoha_roasts",JSON.stringify(list));}catch(e){}
-    renderHist();alert("保存した（この端末内）。バックアップはCSV出力で。");}
+    renderHist();refreshBeanList();onBeanChange();alert("保存した（この端末内）。バックアップはCSV出力で。");}
   function renderHist(){
     var list=getList(),h=$("hist");
     if(!list.length){h.textContent="まだ無し";return;}
     var out="";for(var i=0;i<Math.min(12,list.length);i++){var x=list[i];
-      out+='<div>'+x.date+'｜'+(x.bean||"(豆名なし)")+'｜減'+(x.loss||"-")+'%｜DTR'+(x.dtr||"-")+'%</div>';}
+      var lotLabel=(x.lot!==undefined&&x.lot!==null&&x.lot!=="")?("#"+x.lot):"";
+      out+='<div>'+x.date+'｜'+(x.bean||"(豆名なし)")+(lotLabel?" "+lotLabel:"")+'｜減'+(x.loss||"-")+'%｜DTR'+(x.dtr||"-")+'%</div>';}
     h.innerHTML=out;
   }
   function exportCSV(){
     var rows=[collect()].concat(getList());
-    var head=["日付","豆","精製","生豆量g","焙煎後g","重量減%","室温","火力"];
+    var head=["日付","豆","ロット","ID","精製","生豆量g","焙煎後g","重量減%","室温","火力"];
     for(var i=0;i<EVENTS.length;i++){head.push(EVENTS[i].name+"[秒]");head.push(EVENTS[i].name+"温度");}
     head.push("DTR%");head.push("メモ");
     var lines=[head.join(",")];
     for(var r=0;r<rows.length;r++){var x=rows[r];
-      var row=[x.date,x.bean,x.proc,x.green,x.roasted,x.loss,x.room,x.heat];
+      var row=[x.date,x.bean,nn(x.lot),nn(x.id),x.proc,x.green,x.roasted,x.loss,x.room,x.heat];
       for(var i=0;i<EVENTS.length;i++){row.push(x[EVENTS[i].key]);row.push(x[EVENTS[i].key+"T"]);}
       row.push(x.dtr);row.push(String(x.memo||"").replace(/[\n,]/g," "));
       lines.push(row.join(","));}
@@ -289,16 +318,33 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     $("curTemp").value=temp; drawGraph();
   }
   function addTemp(d){ var v=parseFloat($("curTemp").value); if(isNaN(v)){alert("先に今の温度を入れてね");return;} recordPoint(v+d); }
+  /* 入力中の豆名と同じ過去焙煎のカーブ一覧（背面に薄く描く用）。curveが2点以上ある物だけ。 */
+  function pastCurves(){
+    var b=String(($("bean")&&$("bean").value)||""); if(b==="")return [];
+    var list=getList(),out=[];
+    for(var i=0;i<list.length;i++){
+      var rec=list[i];
+      if(String(rec.bean||"")===b && rec.curve && rec.curve.length>1){ out.push(rec.curve); }
+    }
+    return out;
+  }
   function drawGraph(){
     var c=$("graph"); if(!c||!c.getContext)return;
     var dpr=window.devicePixelRatio||1, cssW=c.clientWidth||300, cssH=170;
     c.width=Math.round(cssW*dpr); c.height=Math.round(cssH*dpr);
     var x=c.getContext("2d"); x.setTransform(dpr,0,0,dpr,0,0); x.clearRect(0,0,cssW,cssH);
-    var padL=36,padR=8,padT=8,padB=18, pW=cssW-padL-padR, pH=cssH-padT-padB, i;
+    var padL=36,padR=8,padT=8,padB=18, pW=cssW-padL-padR, pH=cssH-padT-padB, i, j;
+    var past=pastCurves();
     var maxT=1,minY=999,maxY=-999;
+    /* 現在カーブで範囲を取る */
     for(i=0;i<series.length;i++){ if(series[i].t>maxT)maxT=series[i].t; if(series[i].temp<minY)minY=series[i].temp; if(series[i].temp>maxY)maxY=series[i].temp; }
+    /* 過去カーブも範囲に含める（過去＋現在を自動スケール）*/
+    for(j=0;j<past.length;j++){ var cv=past[j];
+      for(i=0;i<cv.length;i++){ var p=cv[i]; if(p.t>maxT)maxT=p.t; if(p.temp<minY)minY=p.temp; if(p.temp>maxY)maxY=p.temp; }
+    }
     if(elapsed>maxT)maxT=elapsed;
-    if(series.length===0){minY=0;maxY=200;}
+    if(series.length===0&&past.length===0){minY=0;maxY=200;}
+    if(minY>maxY){minY=0;maxY=200;}
     if(minY===maxY){minY-=5;maxY+=5;}
     x.strokeStyle="#3d2e23"; x.lineWidth=1; x.fillStyle="#b29a82"; x.font="10px sans-serif";
     x.beginPath(); x.moveTo(padL,padT); x.lineTo(padL,padT+pH); x.lineTo(padL+pW,padT+pH); x.stroke();
@@ -307,14 +353,29 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     x.fillText("0:00",padL,cssH-4); x.fillText(fmt(maxT),padL+pW-28,cssH-4);
     function PX(t){return padL+(maxT>0?(t/maxT)*pW:0);}
     function PY(v){return padT+pH-((v-minY)/(maxY-minY))*pH;}
+    /* 過去カーブ＝薄い色で背面に */
+    for(j=0;j<past.length;j++){ var c2=past[j];
+      x.strokeStyle="rgba(224,169,106,.22)"; x.lineWidth=1.5; x.beginPath();
+      for(i=0;i<c2.length;i++){ var qx=PX(c2[i].t), qy=PY(c2[i].temp); if(i===0)x.moveTo(qx,qy); else x.lineTo(qx,qy); }
+      x.stroke();
+    }
+    /* 節目ライン（1ハゼ・煎り止め）*/
     var evk=["fc","drop"];
-    for(i=0;i<evk.length;i++){ var mk=marks[evk[i]]; if(mk!==undefined){ x.strokeStyle="rgba(205,138,78,.45)"; x.beginPath(); var xx=PX(mk); x.moveTo(xx,padT); x.lineTo(xx,padT+pH); x.stroke(); } }
+    for(i=0;i<evk.length;i++){ var mk=marks[evk[i]]; if(mk!==undefined){ x.strokeStyle="rgba(205,138,78,.45)"; x.lineWidth=1; x.beginPath(); var xx=PX(mk); x.moveTo(xx,padT); x.lineTo(xx,padT+pH); x.stroke(); } }
+    /* 現在カーブ＝濃く前面に */
     if(series.length>0){
       x.strokeStyle="#e0a96a"; x.lineWidth=2; x.beginPath();
       for(i=0;i<series.length;i++){ var px=PX(series[i].t), py=PY(series[i].temp); if(i===0)x.moveTo(px,py); else x.lineTo(px,py); }
       x.stroke(); x.fillStyle="#e0a96a";
       for(i=0;i<series.length;i++){ x.beginPath(); x.arc(PX(series[i].t),PY(series[i].temp),2.5,0,6.3); x.fill(); }
-    } else { x.fillStyle="#6b5947"; x.fillText("温度を記録すると曲線が出ます",padL+8,padT+pH/2); }
+    } else if(past.length===0){ x.fillStyle="#6b5947"; x.fillText("温度を記録すると曲線が出ます",padL+8,padT+pH/2); }
+  }
+
+  /* ---- 豆名変更時：過去カーブの有無でヒント表示＋グラフ再描画 ---- */
+  function onBeanChange(){
+    var hint=$("beanHint");
+    if(hint){ hint.style.display=(pastCurves().length>0)?"block":"none"; }
+    drawGraph();
   }
 
   /* ---- 初期化 ---- */
@@ -329,8 +390,10 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   $("p5").addEventListener("click",function(){addTemp(5);});
   $("p10").addEventListener("click",function(){addTemp(10);});
   $("pNow").addEventListener("click",function(){recordPoint(parseFloat($("curTemp").value));});
+  $("bean").addEventListener("input",onBeanChange);
+  $("bean").addEventListener("change",onBeanChange);
   window.addEventListener("resize",drawGraph);
-  renderEvents();renderHist();recalc();drawGraph();
+  renderEvents();renderHist();refreshBeanList();recalc();onBeanChange();
 })();
 </script>
 </body>
