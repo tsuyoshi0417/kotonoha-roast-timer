@@ -74,6 +74,18 @@
   </div>
 
   <div class="panel">
+    <label>温度カーブ（随時更新）</label>
+    <canvas id="graph" style="width:100%;height:170px;display:block"></canvas>
+    <div style="margin-top:10px"><label>現在温度 (℃)</label><input id="curTemp" type="number" inputmode="decimal" placeholder="まず今の温度を入れる"></div>
+    <div class="ctrl" style="margin-top:8px">
+      <button type="button" id="p5">＋5℃ 記録</button>
+      <button type="button" id="p10">＋10℃ 記録</button>
+      <button type="button" id="pNow">この値で記録</button>
+    </div>
+    <div class="note">温度が5℃/10℃上がるごとにボタン → その時刻と温度を点で記録。上のグラフが伸びる＝再現できる曲線になる。</div>
+  </div>
+
+  <div class="panel">
     <div><label>豆（産地/銘柄）</label><input id="bean" placeholder="例）エチオピア イルガチェフェ"></div>
     <div style="margin-top:10px">
       <label>精製</label>
@@ -146,7 +158,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     {key:"sc",name:"2ハゼ開始"},{key:"drop",name:"煎り止め"}
   ];
   var running=false,t0=0,elapsed=0,tick=null,lastBeep=0,wakeLock=null;
-  var marks={},temps={},cards={},selProc="",selHeat="";
+  var marks={},temps={},cards={},selProc="",selHeat="",series=[];
 
   /* ---- 選択式チップ（精製・火力）---- */
   function getProc(){ if(selProc==="その他"){var o=$("procOther").value;return o?o:"その他";} return selProc; }
@@ -198,7 +210,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   function toggleRun(){if(running)stopRun();else startRun();}
   function resetTime(){elapsed=0;t0=nowSec();$("timer").textContent="00:00";}
   function loop(){
-    elapsed=nowSec()-t0;$("timer").textContent=fmt(elapsed);
+    elapsed=nowSec()-t0;$("timer").textContent=fmt(elapsed);drawGraph();
     if($("beep").checked){var b=Math.floor(elapsed/30);if(b>lastBeep){lastBeep=b;doBeep();}}
   }
   function doBeep(){
@@ -226,7 +238,8 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     selProc="";$("procOther").value="";$("procOther").style.display="none";
     selHeat="";
     var all=document.querySelectorAll(".chip");for(var k=0;k<all.length;k++)all[k].classList.remove("sel");
-    $("timer").textContent="00:00";renderEvents();recalc();
+    series=[];$("curTemp").value="";
+    $("timer").textContent="00:00";renderEvents();recalc();drawGraph();
   }
 
   /* ---- 保存・出力（全節目の時刻＋温度を保持）---- */
@@ -238,6 +251,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     var o={date:new Date().toLocaleString("ja-JP"),bean:$("bean").value,proc:getProc(),
       green:nn(g),roasted:nn(r),loss:loss,room:$("room").value,heat:getHeat(),dtr:dtr,memo:$("memo").value};
     for(var i=0;i<EVENTS.length;i++){var k=EVENTS[i].key;o[k]=nn(marks[k]);o[k+"T"]=nn(temps[k]);}
+    o.curve=series.slice();
     return o;
   }
   function getList(){try{return JSON.parse(localStorage.getItem("kotonoha_roasts")||"[]");}catch(e){return [];}}
@@ -268,6 +282,41 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     document.body.appendChild(a);a.click();document.body.removeChild(a);
   }
 
+  /* ---- 温度カーブ ---- */
+  function recordPoint(temp){
+    if(temp===null||isNaN(temp))return;
+    series.push({t:Math.round(elapsed),temp:temp});
+    $("curTemp").value=temp; drawGraph();
+  }
+  function addTemp(d){ var v=parseFloat($("curTemp").value); if(isNaN(v)){alert("先に今の温度を入れてね");return;} recordPoint(v+d); }
+  function drawGraph(){
+    var c=$("graph"); if(!c||!c.getContext)return;
+    var dpr=window.devicePixelRatio||1, cssW=c.clientWidth||300, cssH=170;
+    c.width=Math.round(cssW*dpr); c.height=Math.round(cssH*dpr);
+    var x=c.getContext("2d"); x.setTransform(dpr,0,0,dpr,0,0); x.clearRect(0,0,cssW,cssH);
+    var padL=36,padR=8,padT=8,padB=18, pW=cssW-padL-padR, pH=cssH-padT-padB, i;
+    var maxT=1,minY=999,maxY=-999;
+    for(i=0;i<series.length;i++){ if(series[i].t>maxT)maxT=series[i].t; if(series[i].temp<minY)minY=series[i].temp; if(series[i].temp>maxY)maxY=series[i].temp; }
+    if(elapsed>maxT)maxT=elapsed;
+    if(series.length===0){minY=0;maxY=200;}
+    if(minY===maxY){minY-=5;maxY+=5;}
+    x.strokeStyle="#3d2e23"; x.lineWidth=1; x.fillStyle="#b29a82"; x.font="10px sans-serif";
+    x.beginPath(); x.moveTo(padL,padT); x.lineTo(padL,padT+pH); x.lineTo(padL+pW,padT+pH); x.stroke();
+    x.fillText(Math.round(maxY)+"°",2,padT+8);
+    x.fillText(Math.round(minY)+"°",2,padT+pH);
+    x.fillText("0:00",padL,cssH-4); x.fillText(fmt(maxT),padL+pW-28,cssH-4);
+    function PX(t){return padL+(maxT>0?(t/maxT)*pW:0);}
+    function PY(v){return padT+pH-((v-minY)/(maxY-minY))*pH;}
+    var evk=["fc","drop"];
+    for(i=0;i<evk.length;i++){ var mk=marks[evk[i]]; if(mk!==undefined){ x.strokeStyle="rgba(205,138,78,.45)"; x.beginPath(); var xx=PX(mk); x.moveTo(xx,padT); x.lineTo(xx,padT+pH); x.stroke(); } }
+    if(series.length>0){
+      x.strokeStyle="#e0a96a"; x.lineWidth=2; x.beginPath();
+      for(i=0;i<series.length;i++){ var px=PX(series[i].t), py=PY(series[i].temp); if(i===0)x.moveTo(px,py); else x.lineTo(px,py); }
+      x.stroke(); x.fillStyle="#e0a96a";
+      for(i=0;i<series.length;i++){ x.beginPath(); x.arc(PX(series[i].t),PY(series[i].temp),2.5,0,6.3); x.fill(); }
+    } else { x.fillStyle="#6b5947"; x.fillText("温度を記録すると曲線が出ます",padL+8,padT+pH/2); }
+  }
+
   /* ---- 初期化 ---- */
   setupChips("procChips",function(v){selProc=v;$("procOther").style.display=(v==="その他")?"block":"none";});
   setupChips("heatChips",function(v){selHeat=v;});
@@ -277,7 +326,11 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   $("csvBtn").addEventListener("click",exportCSV);
   $("green").addEventListener("input",recalc);
   $("roasted").addEventListener("input",recalc);
-  renderEvents();renderHist();recalc();
+  $("p5").addEventListener("click",function(){addTemp(5);});
+  $("p10").addEventListener("click",function(){addTemp(10);});
+  $("pNow").addEventListener("click",function(){recordPoint(parseFloat($("curTemp").value));});
+  window.addEventListener("resize",drawGraph);
+  renderEvents();renderHist();recalc();drawGraph();
 })();
 </script>
 </body>
