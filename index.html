@@ -282,7 +282,8 @@
           <button type="button" id="p10">＋10℃</button>
         </div>
         <div class="ctrl" style="margin-top:8px">
-          <button type="button" id="undoTemp" style="flex:.55;color:var(--sub)">↶ 戻す</button>
+          <button type="button" id="undoTemp" style="flex:.45;color:var(--sub)">↶ 戻す</button>
+          <button type="button" id="redoTemp" style="flex:.45;color:var(--sub)">↷ 進む</button>
           <button type="button" id="pNow">この値で記録（針を読んで補正）</button>
         </div>
         <div class="note">上がるごとにタップで点を記録。序盤は＋5/＋10、<b>1ハゼ〜2ハゼの大事な所は＋3</b>で細かく。タップを飛ばすと絶対温度がズレるので、時々「この値で記録」で実測の針を読んで補正。</div>
@@ -394,7 +395,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   ];
   var running=false,t0=0,elapsed=0,tick=null,lastBeep=0,wakeLock=null;
   var marks={},temps={},cards={},cardsA={},selProc="",selHeat="",series=[],flames=[];
-  var tempOps=[]; // ＋/−ボタンの操作履歴（誤操作を1手ずつ戻すアンドゥ用）
+  var tempOps=[], tempRedo=[]; // ＋/−ボタンの操作履歴（戻す＝アンドゥ／進む＝リドゥ）
   /* 投入カウントダウン（投入オフセット）の状態 */
   var cdActive=false, cdEnd=0, cdTick=null, chargeOffsetUsed=0;
 
@@ -662,7 +663,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     selProc="";$("procOther").value="";$("procOther").style.display="none";
     selHeat="";
     var all=document.querySelectorAll(".chip");for(var k=0;k<all.length;k++)all[k].classList.remove("sel");
-    series=[];flames=[];tempOps=[];$("curTemp").value="";$("chargeTemp").value="160";$("chargeOffset").value="30";
+    series=[];flames=[];tempOps=[];tempRedo=[];$("curTemp").value="";$("chargeTemp").value="160";$("chargeOffset").value="30";
     $("timer").textContent="00:00";renderEvents();recalc();onBeanChange();updateLiveDtr();updateBakeWarn();
     showTab("before");
   }
@@ -775,14 +776,22 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     $("curTemp").value=temp; drawGraph();
   }
   function addTemp(d){ var v=parseFloat($("curTemp").value); if(isNaN(v)){alert("先に今の温度を入れてね");return;}
-    tempOps.push({prev:$("curTemp").value, len:series.length}); // 戻せるよう操作前を控える
-    recordPoint(v+d); }
-  /* ＋/−の誤操作を1手ずつ取り消す（直前に積んだ点を消し、温度を押す前に戻す）。節目記録には触らない。*/
+    var nv=v+d, pt={t:Math.round(elapsed),temp:nv};
+    tempOps.push({prev:$("curTemp").value, len:series.length, point:pt, after:String(nv)});
+    tempRedo=[]; // 新しい操作をしたら「進む」履歴は無効（標準的なundo/redo挙動）
+    series.push(pt); $("curTemp").value=nv; drawGraph(); }
+  /* 戻す（アンドゥ）：＋/−の誤操作を1手ずつ取り消す。直前に積んだ点を消し、温度を押す前に戻す。節目記録には触らない。*/
   function undoTemp(){
     if(!tempOps.length){ return; }
     var op=tempOps.pop();
     if(series.length>op.len) series.length=op.len;
-    $("curTemp").value=op.prev; drawGraph();
+    $("curTemp").value=op.prev; tempRedo.push(op); drawGraph();
+  }
+  /* 進む（リドゥ）：戻しすぎた時、アンドゥで消した操作をやり直す。*/
+  function redoTemp(){
+    if(!tempRedo.length){ return; }
+    var op=tempRedo.pop();
+    series.push(op.point); $("curTemp").value=op.after; tempOps.push(op); drawGraph();
   }
   /* 入力中の豆名と同じ過去焙煎のカーブ一覧（背面に薄く描く用）。curveが2点以上ある物だけ。 */
   function pastCurves(){
@@ -1005,6 +1014,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   $("m10").addEventListener("click",function(){addTemp(-10);});
   $("pNow").addEventListener("click",function(){recordPoint(parseFloat($("curTemp").value));});
   $("undoTemp").addEventListener("click",undoTemp);
+  $("redoTemp").addEventListener("click",redoTemp);
   var _bakeOn=$("bakeOn"); if(_bakeOn)_bakeOn.addEventListener("change",updateBakeWarn);
   /* 投入後に投入温度欄を変えたら、カーブの開始点(series[0])とtemps.chargeも追従させる */
   var _chargeTemp=$("chargeTemp"); if(_chargeTemp)_chargeTemp.addEventListener("input",function(){
