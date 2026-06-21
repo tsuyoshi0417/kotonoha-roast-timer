@@ -506,7 +506,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
       return;
     }
     else{
-      marks[key]=elapsed;
+      marks[key]=Math.round(elapsed);
       /* 節目タップで「現在温度」欄に値があれば、その節目の温度に自動コピー＋
          温度カーブにもその時刻の点を追加（中点・1ハゼ等のRoR起点になる最重要情報を取り逃さない）。
          空なら時刻だけ（従来動作）。投入(charge)は上の分岐で別処理ゆえここには来ない。 */
@@ -749,8 +749,23 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     if(!list.length){h.textContent="まだ無し";return;}
     var out="";for(var i=0;i<Math.min(12,list.length);i++){var x=list[i];
       var lotLabel=(x.lot!==undefined&&x.lot!==null&&x.lot!=="")?("#"+x.lot):"";
-      out+='<div>'+x.date+'｜'+(x.bean||"(豆名なし)")+(lotLabel?" "+lotLabel:"")+'｜減'+(x.loss||"-")+'%｜DTR'+(x.dtr||"-")+'%</div>';}
+      var rid=String(recId(x)).replace(/"/g,"&quot;");
+      out+='<div style="display:flex;align-items:center;gap:8px"><span style="flex:1">'+x.date+'｜'+(x.bean||"(豆名なし)")+(lotLabel?" "+lotLabel:"")+'｜減'+(x.loss||"-")+'%｜DTR'+(x.dtr||"-")+'%</span>'+
+        '<button type="button" class="delRoast" data-id="'+rid+'" style="flex:0 0 auto;width:auto;padding:6px 12px;font-size:12px;background:transparent;color:var(--warn);border:1px solid var(--line)">削除</button></div>';}
     h.innerHTML=out;
+    var dbtns=h.querySelectorAll(".delRoast");
+    for(var k=0;k<dbtns.length;k++){(function(b){
+      b.addEventListener("click",function(){ deleteRoast(b.getAttribute("data-id")); });
+    })(dbtns[k]);}
+  }
+  /* 焙煎を1件削除（端末内＝localStorage と クラウド＝RTDB の両方から消す）。誤記録・テストの掃除用。*/
+  function deleteRoast(id){
+    if(!confirm("この焙煎を削除する？（元に戻せません）"))return;
+    var list=getList(),out=[];
+    for(var i=0;i<list.length;i++){ if(String(recId(list[i]))!==String(id)) out.push(list[i]); }
+    setList(out);
+    Cloud.deleteOne(id);
+    renderHist(); refreshBeanList(); onBeanChange();
   }
   function exportCSV(){
     var rows=[collect()].concat(getList());
@@ -980,8 +995,13 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
       if(!ready||!uid||!rec)return;
       try{ db.ref("users/"+uid+"/roasts/"+safeKey(recId(rec))).set(rec).catch(function(){}); }catch(e){}
     }
+    /* 1件だけクラウドから削除（IDで）*/
+    function deleteOne(id){
+      if(!ready||!uid||!id)return;
+      try{ db.ref("users/"+uid+"/roasts/"+safeKey(id)).remove().catch(function(){}); }catch(e){}
+    }
 
-    return { init:init, login:login, logout:logout, pushOne:pushOne, isOn:function(){return !!(ready&&uid);} };
+    return { init:init, login:login, logout:logout, pushOne:pushOne, deleteOne:deleteOne, isOn:function(){return !!(ready&&uid);} };
   })();
 
   /* ---- 初期化 ---- */
