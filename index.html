@@ -27,6 +27,24 @@
     background:var(--panel2);color:var(--sub);border:1px solid var(--line);cursor:pointer;font-family:inherit;
     min-height:52px}
   .tabbtn.cur{background:var(--accent);color:#ffffff;border-color:transparent}
+  /* 最上位2モード切替（タブバーのさらに上・タイトル直下）。選択中はティール塗り（.tabbtn.curと同系）*/
+  .modebar{display:flex;gap:8px;margin:8px 0 10px}
+  .modebtn{flex:1;padding:14px 6px;font-size:16px;font-weight:700;border-radius:12px;
+    background:var(--panel2);color:var(--sub);border:1px solid var(--line);cursor:pointer;font-family:inherit;
+    min-height:54px}
+  .modebtn.cur{background:var(--accent);color:#ffffff;border-color:transparent}
+  /* モード本体＝CSSで表示/非表示（DOMは消さない＝既存のgetElementById参照を壊さない）*/
+  .mode{display:none}
+  .mode.active{display:block}
+  /* 淹れる・味わう：サブタブ＋プレースホルダ */
+  .subtabbar{display:flex;gap:8px;margin:0 0 12px}
+  .subtabbtn{flex:1;padding:12px 6px;font-size:14px;font-weight:700;border-radius:12px;
+    background:var(--panel2);color:var(--sub);border:1px solid var(--line);cursor:pointer;font-family:inherit;
+    min-height:48px}
+  .subtabbtn.cur{background:var(--accent);color:#ffffff;border-color:transparent}
+  .subtab{display:none}
+  .subtab.active{display:block}
+  .ph{color:var(--sub);font-size:13px;line-height:1.7}
   h1{font-size:18px;font-weight:700;margin:2px 0 2px;letter-spacing:.04em}
   .tag{color:var(--sub);font-size:12px;margin-bottom:12px}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
@@ -97,9 +115,12 @@
      収めるためフォントは触らず、余白・gap・padding・グラフ高だけ詰める。
      狭い画面（スマホ）は従来どおり縦1カラム（スクロール許容）。*/
   @media (min-width:820px){
-    body{max-width:980px;padding-top:8px}
+    body{max-width:980px;padding-top:6px;padding-bottom:0}
     /* 焼く中を1画面に収めるためヘッダの余白だけ少し詰める（焼く前/後は縦長なので影響なし）*/
     .tag{margin-bottom:6px}
+    /* モードバーも焼く中1画面のため詰める（高さを取りすぎない）*/
+    .modebar{margin:2px 0 4px}
+    .modebtn{padding:7px 6px;min-height:36px;font-size:15px}
     .tabbar{margin:4px 0 8px;padding:4px 0}
     .tabbtn{padding:10px 6px;min-height:44px}
     /* 焼く前/後は従来の読みやすい幅に保つ（焼く中だけ全幅2カラム）*/
@@ -125,11 +146,13 @@
     /* 焼く中はトグルが2行（30秒ビープ＋ベイク注意）＝行間を詰めてiPad1画面を維持 */
     #tabDuring .toggle{margin-top:4px}
     /* 節目（左）＝カードのpadding/gapだけ詰める。ボタンmin-height56pxは死守 */
-    #tabDuring .events{gap:6px}
-    #tabDuring .events.big .ev{padding:5px;gap:4px}
-    #tabDuring .panel > label{margin-bottom:4px}
+    #tabDuring .events{gap:5px}
+    #tabDuring .events.big .ev{padding:3px;gap:3px}
+    #tabDuring .panel > label{margin-bottom:3px}
+    /* 左カラムの節目パネル自体のpaddingも少し詰める（モードバー分を吸収・56pxボタンは維持）*/
+    #tabDuring > .panel:nth-child(2){padding:8px}
     /* 右カラム＝グラフ高と余白を詰める */
-    #tabDuring #graph{height:108px !important}
+    #tabDuring #graph{height:82px !important}
     #tabDuring .ldtr{margin-top:6px;padding:9px}
     #tabDuring .note{margin-top:4px}
   }
@@ -143,6 +166,15 @@
   <div class="err" id="err"></div>
   <h1>言ノ葉 焙煎タイマー <span style="color:var(--sub);font-size:12px">v0</span></h1>
   <div class="tag">珈悦（こうえつ）陶器・遠赤外線 250g｜まず焙煎を本物に</div>
+
+  <!-- 最上位2モード切替（タイトル直下・既定＝焙煎する）-->
+  <div class="modebar" id="modebar">
+    <button type="button" class="modebtn cur" id="modeBtnRoast" data-mode="roast">焙煎する</button>
+    <button type="button" class="modebtn" id="modeBtnBrew" data-mode="brew">淹れる・味わう</button>
+  </div>
+
+  <!-- ============ モード：焙煎する（既存の焼く前/中/後をそのまま包む）============ -->
+  <div class="mode active" id="modeRoast">
 
   <!-- 3フェーズのタブ（最上部・タイマーのさらに上）-->
   <div class="tabbar" id="tabbar">
@@ -273,6 +305,52 @@
     </div>
 
   </div>
+  </div><!-- /#modeRoast -->
+
+  <!-- ============ モード：淹れる・味わう（器のみ・評価フォーム本体はまだ作らない）============ -->
+  <div class="mode" id="modeBrew">
+    <div class="subtabbar" id="brewSubbar">
+      <button type="button" class="subtabbtn cur" id="brewBtnCup" data-sub="cup">カッピング</button>
+      <button type="button" class="subtabbtn" id="brewBtnEsp" data-sub="esp">エスプレッソ</button>
+      <button type="button" class="subtabbtn" id="brewBtnSyp" data-sub="syp">サイフォン</button>
+    </div>
+
+    <!-- カッピング -->
+    <div class="subtab active" id="brewCup">
+      <div class="panel">
+        <label>ロット（焙煎を選ぶ）</label>
+        <select id="lotSelCup"></select>
+        <div class="note" id="lotEmptyCup" style="display:none">焙煎を記録するとここで豆（ロット）を選べます。</div>
+      </div>
+      <div class="panel">
+        <div class="ph">ここは焙煎が数本溜まってから作る（味覚コーチ設計の6軸＋Brix）。エスプレッソはパボーニで何十杯か引いてから。</div>
+      </div>
+    </div>
+
+    <!-- エスプレッソ -->
+    <div class="subtab" id="brewEsp">
+      <div class="panel">
+        <label>ロット（焙煎を選ぶ）</label>
+        <select id="lotSelEsp"></select>
+        <div class="note" id="lotEmptyEsp" style="display:none">焙煎を記録するとここで豆（ロット）を選べます。</div>
+      </div>
+      <div class="panel">
+        <div class="ph">ここは焙煎が数本溜まってから作る（味覚コーチ設計の6軸＋Brix）。エスプレッソはパボーニで何十杯か引いてから。</div>
+      </div>
+    </div>
+
+    <!-- サイフォン -->
+    <div class="subtab" id="brewSyp">
+      <div class="panel">
+        <label>ロット（焙煎を選ぶ）</label>
+        <select id="lotSelSyp"></select>
+        <div class="note" id="lotEmptySyp" style="display:none">焙煎を記録するとここで豆（ロット）を選べます。</div>
+      </div>
+      <div class="panel">
+        <div class="ph">ここは焙煎が数本溜まってから作る（味覚コーチ設計の6軸＋Brix）。エスプレッソはパボーニで何十杯か引いてから。</div>
+      </div>
+    </div>
+  </div><!-- /#modeBrew -->
 
 <script>
 window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.style.display="block";e.textContent="エラー: "+m+" ("+l+"行)";}};
@@ -346,13 +424,63 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     }
   }
   function mark(key){
-    if(key==="charge"){resetTime();marks.charge=0;if(!running)startRun();showTab("during");}
+    if(key==="charge"){resetTime();marks.charge=0;if(!running)startRun();showMode("roast");showTab("during");}
     else{marks[key]=elapsed;if(key==="drop"){stopRun();showTab("after");}}
     var c=cards[key];
     if(c){c.div.className="ev done";c.t.textContent=fmt(marks[key]);c.btn.textContent="記録し直す";}
     var ca=cardsA[key];
     if(ca){ca.div.className="ev done";ca.t.textContent=fmt(marks[key]);ca.btn.textContent="記録し直す";}
     recalc();updateLiveDtr();updateBakeWarn();
+  }
+
+  /* ---- 最上位モード切替（焙煎する／淹れる・味わう）。DOMは消さずCSSで表示/非表示 ---- */
+  function showMode(name){
+    var modes=["roast","brew"];
+    for(var i=0;i<modes.length;i++){
+      var n=modes[i];
+      var box=$("mode"+n.charAt(0).toUpperCase()+n.slice(1));
+      var btn=$("modeBtn"+n.charAt(0).toUpperCase()+n.slice(1));
+      if(box){ if(n===name)box.classList.add("active");else box.classList.remove("active"); }
+      if(btn){ if(n===name)btn.classList.add("cur");else btn.classList.remove("cur"); }
+    }
+    if(name==="brew"){ populateLots(); } // 開くたび最新の保存焙煎でロット選択を作り直す
+    try{ window.scrollTo(0,0); }catch(e){}
+  }
+
+  /* ---- 淹れる・味わう のサブタブ切替（カッピング／エスプレッソ／サイフォン）---- */
+  function showSub(name){
+    var subs=[{k:"cup",id:"Cup"},{k:"esp",id:"Esp"},{k:"syp",id:"Syp"}];
+    for(var i=0;i<subs.length;i++){
+      var s=subs[i];
+      var box=$("brew"+s.id);
+      var btn=$("brewBtn"+s.id);
+      if(box){ if(s.k===name)box.classList.add("active");else box.classList.remove("active"); }
+      if(btn){ if(s.k===name)btn.classList.add("cur");else btn.classList.remove("cur"); }
+    }
+  }
+
+  /* ---- ロット選択肢を作る（保存済み焙煎＝localStorage cotonoha_roasts から「豆名・焙煎日・#ロット」）。
+         3サブタブ共通。最新（list先頭＝新しい順）を既定選択。保存ゼロなら案内文を出す。 ---- */
+  function populateLots(){
+    var list=getList();
+    var sels=[{s:"lotSelCup",e:"lotEmptyCup"},{s:"lotSelEsp",e:"lotEmptyEsp"},{s:"lotSelSyp",e:"lotEmptySyp"}];
+    var opts="";
+    for(var i=0;i<list.length;i++){
+      var x=list[i];
+      var lotLabel=(x.lot!==undefined&&x.lot!==null&&x.lot!=="")?(" #"+x.lot):"";
+      var label=(x.bean||"(豆名なし)")+lotLabel+"｜"+(x.day||x.date||"");
+      var val=recId(x);
+      opts+='<option value="'+String(val).replace(/"/g,"&quot;")+'">'+label.replace(/</g,"&lt;")+'</option>';
+    }
+    for(var j=0;j<sels.length;j++){
+      var sel=$(sels[j].s), emp=$(sels[j].e);
+      if(sel){
+        sel.innerHTML=opts;
+        sel.style.display=list.length?"block":"none";
+        if(list.length){ sel.selectedIndex=0; } // 先頭＝最新を既定
+      }
+      if(emp){ emp.style.display=list.length?"none":"block"; }
+    }
   }
 
   /* ---- タブ切替（DOMは消さずCSSで表示/非表示）---- */
@@ -747,8 +875,20 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   for(var _ti=0;_ti<_tabBtns.length;_ti++){(function(b){
     b.addEventListener("click",function(){showTab(b.getAttribute("data-tab"));});
   })(_tabBtns[_ti]);}
+  /* モードバー＝最上位切替（焙煎する／淹れる・味わう）*/
+  var _modeBtns=document.querySelectorAll(".modebtn");
+  for(var _mi=0;_mi<_modeBtns.length;_mi++){(function(b){
+    b.addEventListener("click",function(){showMode(b.getAttribute("data-mode"));});
+  })(_modeBtns[_mi]);}
+  /* 淹れる・味わう のサブタブ */
+  var _subBtns=document.querySelectorAll(".subtabbtn");
+  for(var _si=0;_si<_subBtns.length;_si++){(function(b){
+    b.addEventListener("click",function(){showSub(b.getAttribute("data-sub"));});
+  })(_subBtns[_si]);}
   renderEvents();renderHist();refreshBeanList();recalc();onBeanChange();updateLiveDtr();updateBakeWarn();
   showTab("before"); // 初期表示＝焼く前
+  showSub("cup");     // 淹れる・味わうの既定サブタブ＝カッピング
+  showMode("roast");  // 既定モード＝焙煎する（既存挙動そのまま）
   Cloud.init(); // クラウド同期を起動（失敗してもここまでで本体は動いている）
 })();
 </script>
