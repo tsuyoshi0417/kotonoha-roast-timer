@@ -78,11 +78,14 @@
     <canvas id="graph" style="width:100%;height:170px;display:block"></canvas>
     <div style="margin-top:10px"><label>現在温度 (℃)</label><input id="curTemp" type="number" inputmode="decimal" placeholder="まず今の温度を入れる"></div>
     <div class="ctrl" style="margin-top:8px">
-      <button type="button" id="p5">＋5℃ 記録</button>
-      <button type="button" id="p10">＋10℃ 記録</button>
-      <button type="button" id="pNow">この値で記録</button>
+      <button type="button" id="p3">＋3℃</button>
+      <button type="button" id="p5">＋5℃</button>
+      <button type="button" id="p10">＋10℃</button>
     </div>
-    <div class="note">温度が5℃/10℃上がるごとにボタン → その時刻と温度を点で記録。上のグラフが伸びる＝再現できる曲線になる。</div>
+    <div class="ctrl" style="margin-top:8px">
+      <button type="button" id="pNow">この値で記録（針を読んで補正）</button>
+    </div>
+    <div class="note">上がるごとにタップで点を記録。序盤は＋5/＋10、<b>1ハゼ〜2ハゼの大事な所は＋3</b>で細かく。タップを飛ばすと絶対温度がズレるので、時々「この値で記録」で実測の針を読んで補正。</div>
   </div>
 
   <div class="panel">
@@ -387,6 +390,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   $("csvBtn").addEventListener("click",exportCSV);
   $("green").addEventListener("input",recalc);
   $("roasted").addEventListener("input",recalc);
+  $("p3").addEventListener("click",function(){addTemp(3);});
   $("p5").addEventListener("click",function(){addTemp(5);});
   $("p10").addEventListener("click",function(){addTemp(10);});
   $("pNow").addEventListener("click",function(){recordPoint(parseFloat($("curTemp").value));});
