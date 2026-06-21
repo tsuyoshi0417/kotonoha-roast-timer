@@ -7,9 +7,9 @@
 <title>言ノ葉 焙煎タイマー</title>
 <style>
   :root{
-    --bg:#1b1410; --panel:#261c16; --panel2:#2f231b;
-    --ink:#f2e8da; --sub:#b29a82; --line:#3d2e23;
-    --accent:#cd8a4e; --accent2:#e0a96a; --ok:#7fa86b; --warn:#c96a52;
+    --bg:#191712; --panel:#232019; --panel2:#2d2920;
+    --ink:#f0e9da; --sub:#a89d88; --line:#3a352b;
+    --accent:#97a559; --accent2:#d8c486; --ok:#97a559; --warn:#b06a4f;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   body{margin:0;background:var(--bg);color:var(--ink);
@@ -510,7 +510,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     if(series.length===0&&past.length===0){minY=0;maxY=200;}
     if(minY>maxY){minY=0;maxY=200;}
     if(minY===maxY){minY-=5;maxY+=5;}
-    x.strokeStyle="#3d2e23"; x.lineWidth=1; x.fillStyle="#b29a82"; x.font="10px sans-serif";
+    x.strokeStyle="#3a352b"; x.lineWidth=1; x.fillStyle="#a89d88"; x.font="10px sans-serif";
     x.beginPath(); x.moveTo(padL,padT); x.lineTo(padL,padT+pH); x.lineTo(padL+pW,padT+pH); x.stroke();
     x.fillText(Math.round(maxY)+"°",2,padT+8);
     x.fillText(Math.round(minY)+"°",2,padT+pH);
@@ -519,26 +519,26 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     function PY(v){return padT+pH-((v-minY)/(maxY-minY))*pH;}
     /* 過去カーブ＝薄い色で背面に */
     for(j=0;j<past.length;j++){ var c2=past[j];
-      x.strokeStyle="rgba(224,169,106,.22)"; x.lineWidth=1.5; x.beginPath();
+      x.strokeStyle="rgba(216,196,134,.22)"; x.lineWidth=1.5; x.beginPath();
       for(i=0;i<c2.length;i++){ var qx=PX(c2[i].t), qy=PY(c2[i].temp); if(i===0)x.moveTo(qx,qy); else x.lineTo(qx,qy); }
       x.stroke();
     }
     /* 節目ライン（1ハゼ・煎り止め）*/
     var evk=["fc","drop"];
-    for(i=0;i<evk.length;i++){ var mk=marks[evk[i]]; if(mk!==undefined){ x.strokeStyle="rgba(205,138,78,.45)"; x.lineWidth=1; x.beginPath(); var xx=PX(mk); x.moveTo(xx,padT); x.lineTo(xx,padT+pH); x.stroke(); } }
+    for(i=0;i<evk.length;i++){ var mk=marks[evk[i]]; if(mk!==undefined){ x.strokeStyle="rgba(176,106,79,.55)"; x.lineWidth=1; x.beginPath(); var xx=PX(mk); x.moveTo(xx,padT); x.lineTo(xx,padT+pH); x.stroke(); } }
     /* 火力変更マーカー＝ティール/青系の縦線（節目のaccent色と混同しないよう別色）＋下部に小ラベル */
     if(flames.length>0){
       var fx, prevLabelX=-999, lab;
       x.font="9px sans-serif";
       for(i=0;i<flames.length;i++){
         fx=PX(flames[i].t);
-        x.strokeStyle="rgba(90,170,180,.55)"; x.lineWidth=1; x.setLineDash([3,3]);
+        x.strokeStyle="rgba(110,150,205,.6)"; x.lineWidth=1; x.setLineDash([3,3]);
         x.beginPath(); x.moveTo(fx,padT); x.lineTo(fx,padT+pH); x.stroke();
         x.setLineDash([]);
         lab=String(flames[i].level||"");
         /* ラベルが詰まりすぎたら間引く（直前ラベルと近すぎたら出さない）*/
         if(fx-prevLabelX>=14){
-          x.fillStyle="rgba(120,200,210,.95)";
+          x.fillStyle="rgba(150,180,225,.95)";
           x.fillText(lab, Math.min(fx+1, padL+pW-12), padT+pH-2);
           prevLabelX=fx;
         }
@@ -546,9 +546,9 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     }
     /* 現在カーブ＝濃く前面に */
     if(series.length>0){
-      x.strokeStyle="#e0a96a"; x.lineWidth=2; x.beginPath();
+      x.strokeStyle="#d8c486"; x.lineWidth=2; x.beginPath();
       for(i=0;i<series.length;i++){ var px=PX(series[i].t), py=PY(series[i].temp); if(i===0)x.moveTo(px,py); else x.lineTo(px,py); }
-      x.stroke(); x.fillStyle="#e0a96a";
+      x.stroke(); x.fillStyle="#d8c486";
       for(i=0;i<series.length;i++){ x.beginPath(); x.arc(PX(series[i].t),PY(series[i].temp),2.5,0,6.3); x.fill(); }
     } else if(past.length===0){ x.fillStyle="#6b5947"; x.fillText("温度を記録すると曲線が出ます",padL+8,padT+pH/2); }
   }
