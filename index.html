@@ -422,7 +422,7 @@ CotonohaSound.bindUnlock();
 <body>
   <div class="err" id="err"></div>
   <h1 style="display:flex;align-items:center;gap:8px">
-    <span>言ノ葉 焙煎タイマー <span style="color:var(--sub);font-size:12px">v1.1</span></span>
+    <span>言ノ葉 焙煎タイマー <span style="color:var(--sub);font-size:12px">v1.2</span></span>
     <button type="button" id="soundToggle" title="音のオン/オフ" aria-label="音のオン/オフ"
       style="margin-left:auto;font-size:18px;line-height:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 9px;cursor:pointer">🔊</button>
   </h1>
@@ -515,6 +515,7 @@ CotonohaSound.bindUnlock();
           <button type="button" class="chip" data-v="中強">中強</button>
           <button type="button" class="chip" data-v="強">強</button>
         </div>
+        <div class="note" id="flameLog" style="margin-top:6px"></div>
         <div class="ldtr" id="liveDtr">今止めたら DTR <b id="liveDtrVal">—</b></div>
         <div class="bake" id="bakeWarn">⏱ 長丁場です。温度は上がってる？ 火力が寝たまま時間だけ進むと“ベイク”（味が抜ける）になりやすい。気になったら火力か煎り止めを。<br><span class="sub">（この機械は長めが普通・最終判断は味）</span></div>
       </div>
@@ -792,6 +793,18 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   /* ---- 選択式チップ（精製・火力）---- */
   function getProc(){ if(selProc==="その他"){var o=$("procOther").value;return o?o:"その他";} return selProc; }
   function getHeat(){ return selHeat; }
+  /* 火力の温度表記＝何℃で火力を変えたかリアルタイム表示（つよしさん要望2026-06-27）*/
+  function renderFlameLog(){
+    var el=$("flameLog"); if(!el)return;
+    if(flames.length){
+      var parts=[];
+      for(var i=0;i<flames.length;i++){var f=flames[i];parts.push((f.temp!=null&&f.temp!==""?f.temp+"℃で":fmt(f.t)+"に")+f.level);}
+      var tail=(selHeat&&flames[flames.length-1].level!==selHeat)?(" → いま"+selHeat):"";
+      el.innerHTML="火力の推移: "+parts.join(" → ")+tail;
+    } else {
+      el.textContent=selHeat?("いまの火力: "+selHeat+"（温度を入れてから火力を変えると、何℃で変えたか残る）"):"";
+    }
+  }
   function setupChips(containerId, onPick){
     var chips=$(containerId).querySelectorAll(".chip");
     for(var i=0;i<chips.length;i++){(function(c){
@@ -1081,6 +1094,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     var all=document.querySelectorAll(".chip");for(var k=0;k<all.length;k++)all[k].classList.remove("sel");
     series=[];flames=[];tempOps=[];tempRedo=[];$("curTemp").value="";$("chargeTemp").value="160";$("chargeOffset").value="30";
     $("timer").textContent="00:00";renderEvents();recalc();onBeanChange();updateLiveDtr();updateBakeWarn();
+    renderFlameLog();
     showTab("before");
   }
 
@@ -1771,10 +1785,12 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     if(running||elapsed>0){
       var last=flames.length?flames[flames.length-1]:null;
       if(!last||last.level!==v){
-        flames.push({t:Math.round(elapsed),level:v});
+        var ct=num("curTemp"); if(ct===null&&series.length)ct=series[series.length-1].temp;
+        flames.push({t:Math.round(elapsed),level:v,temp:(ct!==null?ct:null)});
         drawGraph();
       }
     }
+    renderFlameLog();
   });
   $("startBtn").addEventListener("click",toggleRun);
   $("resetBtn").addEventListener("click",resetAll);
