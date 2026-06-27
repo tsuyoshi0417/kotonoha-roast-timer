@@ -424,7 +424,7 @@ CotonohaSound.bindUnlock();
 <body>
   <div class="err" id="err"></div>
   <h1 style="display:flex;align-items:center;gap:8px">
-    <span>言ノ葉 焙煎タイマー <span style="color:var(--sub);font-size:12px">v1.3</span></span>
+    <span>言ノ葉 焙煎タイマー <span style="color:var(--sub);font-size:12px">v1.4</span></span>
     <button type="button" id="soundToggle" title="音のオン/オフ" aria-label="音のオン/オフ"
       style="margin-left:auto;font-size:18px;line-height:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 9px;cursor:pointer">🔊</button>
   </h1>
@@ -478,6 +478,7 @@ CotonohaSound.bindUnlock();
           <div><label>生豆量 (g)</label><input id="green" type="number" inputmode="decimal" value="150"></div>
           <div><label>室温 (℃)</label><input id="room" type="number" inputmode="decimal" value="20"></div>
         </div>
+        <div class="note" id="weatherNote" style="margin-top:8px"></div>
         <div class="note" style="margin-top:12px">準備ができたら「焙煎中」へ。<b>スタートか投入の記録で自動的に「焙煎中」に切り替わります。</b></div>
       </div>
 
@@ -896,6 +897,9 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   }
   function doCharge(){
     resetTime();marks.charge=0;chargeOffsetUsed=chargeOffsetSec();
+    chargeStartJST=nowJST();chargeStartEpoch=nowEpoch();   // 投入＝焙煎開始の日本時間を確定
+    logAudit("charge",{t:0,jst:chargeStartJST});
+    fetchWeather();                                        // 投入の瞬間の外気を捕まえる（福岡早良区・取れなくても続行）
     /* 投入温度を温度カーブの開始点(t=0)に置く＝カーブが投入温度から始まる。
        以降の現在温度＋3/＋5/＋10はその上に積む。temps.chargeにも入れて焙煎後の投入温度欄へ反映 */
     var ct=num("chargeTemp");
@@ -912,6 +916,39 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     if(caC2){caC2.div.className="ev done";caC2.t.textContent=fmt(0);caC2.btn.textContent="記録し直す";}
     recalc();updateLiveDtr();updateBakeWarn();updateNextHint();
     try{CotonohaSound.play("done");}catch(e){} // 投入0:00到達＝達成音（りん少し高め1打）
+  }
+  /* ---- 監査ログ・JST時刻・天気・拡張メタ（つよしさん要望2026-06-27）----
+     方針：①修正/取消をしても"修正前(prev)"も含め全操作を残す ②全部に日本時間(JST)の時刻 ③福岡早良区の外気/天気
+     ④番頭/エージェントが必要な情報を任意キーで後付け保存できる拡張メタ(meta)。 */
+  var auditLog=[], roastMeta={}, weather=null, chargeStartJST=null, chargeStartEpoch=null;
+  function nowJST(){ try{ return new Date().toLocaleString("ja-JP",{timeZone:"Asia/Tokyo",hour12:false}); }catch(e){ return new Date().toLocaleString("ja-JP"); } }
+  function nowEpoch(){ return (new Date()).getTime(); }
+  /* 全操作を時刻つきで残す。修正しても"修正前(prev)"を必ず保持＝後から真の値を復元できる。*/
+  function logAudit(type,detail){
+    try{ var e={ts:nowJST(),epoch:nowEpoch(),elapsed:Math.round(elapsed),type:type};
+      if(detail){for(var k in detail){if(detail.hasOwnProperty(k))e[k]=detail[k];}}
+      auditLog.push(e);
+    }catch(_e){}
+  }
+  /* WMO天気コード→日本語 */
+  function wmoDesc(c){var m={0:"快晴",1:"晴れ",2:"薄曇り",3:"曇り",45:"霧",48:"霧氷",51:"霧雨(弱)",53:"霧雨",55:"霧雨(強)",56:"着氷性の霧雨",57:"着氷性の霧雨(強)",61:"雨(弱)",63:"雨",65:"雨(強)",66:"着氷性の雨",67:"着氷性の雨(強)",71:"雪(弱)",73:"雪",75:"雪(強)",77:"霧雪",80:"にわか雨(弱)",81:"にわか雨",82:"にわか雨(激)",85:"にわか雪",86:"にわか雪(強)",95:"雷雨",96:"雷雨(雹)",99:"雷雨(雹・激)"};return m[c]||("コード"+c);}
+  /* 福岡市早良区(概略・区役所付近の座標)の現在の外気を取得。Open-Meteo＝APIキー不要・CORS許可・無料・商用可。失敗しても焙煎は止めない。*/
+  function fetchWeather(cb){
+    try{
+      var url="https://api.open-meteo.com/v1/forecast?latitude=33.5503&longitude=130.3580&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,pressure_msl&timezone=Asia%2FTokyo";
+      fetch(url).then(function(r){return r.json();}).then(function(d){
+        if(d&&d.current){var c=d.current;
+          weather={place:"福岡市早良区(概略)",lat:33.5503,lon:130.3580,tempC:c.temperature_2m,feelsC:c.apparent_temperature,humidity:c.relative_humidity_2m,code:c.weather_code,desc:wmoDesc(c.weather_code),windKmh:c.wind_speed_10m,pressureHpa:c.pressure_msl,obsTime:c.time,fetchedJST:nowJST(),epoch:nowEpoch(),source:"open-meteo"};
+          showWeather(); logAudit("weather",{tempC:weather.tempC,desc:weather.desc});
+          if(cb)cb(weather);
+        }
+      }).catch(function(){});
+    }catch(e){}
+  }
+  function showWeather(){
+    var s=weather?("🌡 外気温 "+weather.tempC+"℃（体感"+weather.feelsC+"）・"+weather.desc+"・湿度"+weather.humidity+"%　— 福岡早良区 "+(weather.fetchedJST||"")):"";
+    var a=$("weatherNote"); if(a)a.textContent=s;
+    var b=$("weatherNoteAfter"); if(b)b.textContent=s;
   }
   /* ---- 節目の順序まわり（会議2026-06-27＝逆転/DTR0の根治）---- */
   function evIndex(k){for(var i=0;i<EVENTS.length;i++){if(EVENTS[i].key===k)return i;}return -1;}
@@ -941,6 +978,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     var last=tapLog.pop();
     if(last.prev===null||last.prev===undefined){ marks[last.key]=undefined; }
     else { marks[last.key]=last.prev; }
+    logAudit("undo",{key:last.key,name:last.name,undid:last.t,restoredTo:(last.prev==null?null:last.prev)});
     renderEvents();drawGraph();recalc();updateLiveDtr();updateBakeWarn();
   }
   function mark(key){
@@ -960,16 +998,21 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
         if(!confirm(enm+"を "+fmt(Math.round(elapsed))+" に記録し直す？\n元の記録 "+fmt(marks[key])+" は上書きされます。誤タップなら「キャンセル」。")){ return; }
       }
       var newT=Math.round(elapsed);
+      var prevVal=(firstTime?null:marks[key]);
       /* ④順序ガード：記録済みの節目と時系列が逆なら確認（1ハゼ終了<開始 等の逆転＝DTR0の元を根治）*/
-      var ordMsg=orderConflictMsg(key,newT);
-      if(ordMsg && !confirm(ordMsg)){ return; }
+      var ordMsg=orderConflictMsg(key,newT), orderOverride=false;
+      if(ordMsg){ if(!confirm(ordMsg)){ logAudit("mark_cancel",{key:key,name:enm,t:newT,reason:"order"}); return; } orderOverride=true; }
       /* ⑤近接ガード：1ハゼ開始から30秒未満で煎り止め＝DTRがほぼ0になる事故を確認 */
+      var proxOverride=false;
       if(key==="drop" && marks.fc!==undefined && (newT-marks.fc)>=0 && (newT-marks.fc)<30){
-        if(!confirm("1ハゼ開始から "+fmt(newT-marks.fc)+" で煎り止め？\nDTR（1ハゼ後の伸び）がほぼ0%になります。早すぎないか確認を。\n（OK＝記録／キャンセル＝中止）")){ return; }
+        if(!confirm("1ハゼ開始から "+fmt(newT-marks.fc)+" で煎り止め？\nDTR（1ハゼ後の伸び）がほぼ0%になります。早すぎないか確認を。\n（OK＝記録／キャンセル＝中止）")){ logAudit("mark_cancel",{key:key,name:enm,t:newT,reason:"proximity"}); return; }
+        proxOverride=true;
       }
       /* ③バックログ：全タップを履歴に残す（誤操作があっても後から真の節目を復元できる＝保存にもCSVにも出す） */
-      tapLog.push({key:key,name:enm,t:Math.round(elapsed),prev:(firstTime?null:marks[key])});
-      marks[key]=Math.round(elapsed);
+      tapLog.push({key:key,name:enm,t:newT,prev:prevVal});
+      marks[key]=newT;
+      /* 監査ログ：記録/訂正を、修正前(prev)・警告無視の有無・JST時刻つきで残す（つよしさん要望2026-06-27）*/
+      logAudit(firstTime?"mark":"remark",{key:key,name:enm,t:newT,prev:prevVal,curTemp:num("curTemp"),orderOverride:orderOverride,proximityOverride:proxOverride});
       /* 節目タップで「現在温度」欄に値があれば、その節目の温度に自動コピー＋
          温度カーブにもその時刻の点を追加（中点・1ハゼ等のRoR起点になる最重要情報を取り逃さない）。
          空なら時刻だけ（従来動作）。投入(charge)は上の分岐で別処理ゆえここには来ない。 */
@@ -1131,6 +1174,8 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     if(!confirm("今の入力を全部消して新しい焙煎を始める？"))return;
     cancelCountdown();chargeOffsetUsed=0;
     stopRun();elapsed=0;marks={};temps={};tapLog=[];
+    auditLog=[];roastMeta={};chargeStartJST=null;chargeStartEpoch=null;  // v1.4：新しい焙煎＝監査ログ/メタ/投入時刻も初期化（天気は次の投入で取り直す）
+    logAudit("reset",{});
     $("bean").value="";$("roasted").value="";$("memo").value="";
     $("green").value="150";$("room").value="20";
     selProc="";$("procOther").value="";$("procOther").style.display="none";
@@ -1170,6 +1215,15 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     o.curve=series.slice();
     o.flames=flames.slice();
     o.taplog=tapLog.slice();
+    /* ---- v1.4：全操作の監査ログ・JST時刻・外気/天気・拡張メタ（つよしさん要望2026-06-27）---- */
+    o.audit=auditLog.slice();              // 訂正前後・取消・警告無視まで全部・各イベントにJST時刻
+    o.tz="Asia/Tokyo";
+    o.chargeJST=chargeStartJST;            // 投入＝焙煎開始の日本時間
+    o.chargeEpoch=chargeStartEpoch;
+    o.savedJST=nowJST();                   // 保存した日本時間
+    o.savedEpoch=nowEpoch();
+    o.weather=weather;                     // 焙煎時の外気（福岡早良区・取れなければnull）
+    o.meta=roastMeta;                      // 拡張メタ＝番頭/エージェントが任意キーを後付け保存できる場所
     return o;
   }
   function getList(){try{return JSON.parse(localStorage.getItem("cotonoha_roasts")||"[]");}catch(e){return [];}}
@@ -1246,12 +1300,18 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     var rows=[collect()].concat(getList());
     var head=["日付","豆","ロット","ID","精製","生豆量g","焙煎後g","重量減%","室温","火力"];
     for(var i=0;i<EVENTS.length;i++){head.push(EVENTS[i].name+"[秒]");head.push(EVENTS[i].name+"温度");}
-    head.push("DTR%");head.push("投入オフセット秒");head.push("メモ");head.push("操作履歴(誤タップ復元用)");
+    head.push("DTR%");head.push("投入オフセット秒");head.push("メモ");
+    head.push("投入時刻JST");head.push("外気温℃");head.push("天気");head.push("保存時刻JST");
+    head.push("操作履歴(誤タップ復元用)");
     var lines=[head.join(",")];
     for(var r=0;r<rows.length;r++){var x=rows[r];
       var row=[x.date,x.bean,nn(x.lot),nn(x.id),x.proc,x.green,x.roasted,x.loss,x.room,x.heat];
       for(var i=0;i<EVENTS.length;i++){row.push(x[EVENTS[i].key]);row.push(x[EVENTS[i].key+"T"]);}
       row.push(x.dtr);row.push(nn(x.chargeOffset));row.push(String(x.memo||"").replace(/[\n,]/g," "));
+      row.push(nn(x.chargeJST));
+      row.push(x.weather?nn(x.weather.tempC):"");
+      row.push(x.weather?String(x.weather.desc||"").replace(/[\n,]/g," "):"");
+      row.push(nn(x.savedJST));
       var tl=(x.taplog||[]).map(function(e){return e.name+"@"+e.t+(e.prev!=null?"(訂正←元"+e.prev+")":"");}).join(" / ");
       row.push('"'+tl.replace(/"/g,"")+'"');
       lines.push(row.join(","));}
@@ -1553,19 +1613,19 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   function recordPoint(temp){
     if(temp===null||isNaN(temp))return;
     series.push({t:Math.round(elapsed),temp:temp});
-    $("curTemp").value=temp; drawGraph();
+    $("curTemp").value=temp; drawGraph(); logAudit("temp",{t:Math.round(elapsed),temp:temp,by:"now"});
   }
   function addTemp(d){ var v=parseFloat($("curTemp").value); if(isNaN(v)){alert("先に今の温度を入れてね");return;}
     var nv=v+d, pt={t:Math.round(elapsed),temp:nv};
     tempOps.push({prev:$("curTemp").value, len:series.length, point:pt, after:String(nv)});
     tempRedo=[]; // 新しい操作をしたら「進む」履歴は無効（標準的なundo/redo挙動）
-    series.push(pt); $("curTemp").value=nv; drawGraph(); }
+    series.push(pt); $("curTemp").value=nv; drawGraph(); logAudit("temp",{t:pt.t,temp:nv,by:d}); }
   /* 戻す（アンドゥ）：＋/−の誤操作を1手ずつ取り消す。直前に積んだ点を消し、温度を押す前に戻す。節目記録には触らない。*/
   function undoTemp(){
     if(!tempOps.length){ return; }
     var op=tempOps.pop();
     if(series.length>op.len) series.length=op.len;
-    $("curTemp").value=op.prev; tempRedo.push(op); drawGraph();
+    $("curTemp").value=op.prev; tempRedo.push(op); drawGraph(); logAudit("temp_undo",{restoredTo:op.prev});
   }
   /* 進む（リドゥ）：戻しすぎた時、アンドゥで消した操作をやり直す。*/
   function redoTemp(){
@@ -1831,6 +1891,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
       if(!last||last.level!==v){
         var ct=num("curTemp"); if(ct===null&&series.length)ct=series[series.length-1].temp;
         flames.push({t:Math.round(elapsed),level:v,temp:(ct!==null?ct:null)});
+        logAudit("heat",{level:v,t:Math.round(elapsed),temp:(ct!==null?ct:null)});
         drawGraph();
       }
     }
@@ -1946,6 +2007,17 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   showSub("cup");     // 淹れる・味わうの既定サブタブ＝カッピング
   showMode("roast");  // 既定モード＝焙煎する（既存挙動そのまま）
   Cloud.init(); // クラウド同期を起動（失敗してもここまでで本体は動いている）
+  fetchWeather(); // 起動時に福岡早良区の外気を一度取得して「焙煎前」に表示（投入時に取り直す）
+  /* 拡張メタの窓口：番頭/エージェントが「必要な情報を勝手に保存」できる。
+     例）window.cotonohaRoast.setMeta("豆ロット番号","XYZ") → 次に保存する焙煎レコードの meta に入り、監査ログにも残る。*/
+  window.cotonohaRoast={
+    setMeta:function(k,v){ try{ roastMeta[String(k)]=v; logAudit("meta:set",{key:String(k)}); return true; }catch(e){ return false; } },
+    getMeta:function(){ return roastMeta; },
+    getAudit:function(){ return auditLog.slice(); },
+    getWeather:function(){ return weather; },
+    refreshWeather:fetchWeather,
+    version:"1.4"
+  };
 })();
 </script>
 </body>
