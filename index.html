@@ -784,7 +784,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     {key:"sc",name:"2ハゼ開始"},{key:"drop",name:"煎り止め"}
   ];
   var running=false,t0=0,elapsed=0,tick=null,lastBeep=0,wakeLock=null;
-  var marks={},temps={},cards={},cardsA={},selProc="",selHeat="",series=[],flames=[];
+  var marks={},temps={},cards={},cardsA={},selProc="",selHeat="",series=[],flames=[],tapLog=[];
   var tempOps=[], tempRedo=[]; // ＋/−ボタンの操作履歴（戻す＝アンドゥ／進む＝リドゥ）
   /* 投入カウントダウン（投入オフセット）の状態 */
   var cdActive=false, cdEnd=0, cdTick=null, chargeOffsetUsed=0, cdLastSec=0;
@@ -905,6 +905,13 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     }
     else{
       var firstTime=(marks[key]===undefined); // 初回記録か（記録し直しでは節目音を鳴らさない＝煩さ回避）
+      var enm=key; for(var ei=0;ei<EVENTS.length;ei++){if(EVENTS[ei].key===key)enm=EVENTS[ei].name;}
+      /* ②誤上書き防止：既に記録済みの節目を再タップ＝確認（誤タップで1ハゼ等の時刻が狂いDTRが壊れる事故の根治） */
+      if(!firstTime){
+        if(!confirm(enm+"を "+fmt(Math.round(elapsed))+" に記録し直す？\n元の記録 "+fmt(marks[key])+" は上書きされます。誤タップなら「キャンセル」。")){ return; }
+      }
+      /* ③バックログ：全タップを履歴に残す（誤操作があっても後から真の節目を復元できる＝保存にもCSVにも出す） */
+      tapLog.push({key:key,name:enm,t:Math.round(elapsed),prev:(firstTime?null:marks[key])});
       marks[key]=Math.round(elapsed);
       /* 節目タップで「現在温度」欄に値があれば、その節目の温度に自動コピー＋
          温度カーブにもその時刻の点を追加（中点・1ハゼ等のRoR起点になる最重要情報を取り逃さない）。
@@ -1066,7 +1073,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   function resetAll(){
     if(!confirm("今の入力を全部消して新しい焙煎を始める？"))return;
     cancelCountdown();chargeOffsetUsed=0;
-    stopRun();elapsed=0;marks={};temps={};
+    stopRun();elapsed=0;marks={};temps={};tapLog=[];
     $("bean").value="";$("roasted").value="";$("memo").value="";
     $("green").value="150";$("room").value="20";
     selProc="";$("procOther").value="";$("procOther").style.display="none";
@@ -1104,6 +1111,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     for(var i=0;i<EVENTS.length;i++){var k=EVENTS[i].key;o[k]=nn(marks[k]);o[k+"T"]=nn(temps[k]);}
     o.curve=series.slice();
     o.flames=flames.slice();
+    o.taplog=tapLog.slice();
     return o;
   }
   function getList(){try{return JSON.parse(localStorage.getItem("cotonoha_roasts")||"[]");}catch(e){return [];}}
@@ -1180,12 +1188,14 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     var rows=[collect()].concat(getList());
     var head=["日付","豆","ロット","ID","精製","生豆量g","焙煎後g","重量減%","室温","火力"];
     for(var i=0;i<EVENTS.length;i++){head.push(EVENTS[i].name+"[秒]");head.push(EVENTS[i].name+"温度");}
-    head.push("DTR%");head.push("投入オフセット秒");head.push("メモ");
+    head.push("DTR%");head.push("投入オフセット秒");head.push("メモ");head.push("操作履歴(誤タップ復元用)");
     var lines=[head.join(",")];
     for(var r=0;r<rows.length;r++){var x=rows[r];
       var row=[x.date,x.bean,nn(x.lot),nn(x.id),x.proc,x.green,x.roasted,x.loss,x.room,x.heat];
       for(var i=0;i<EVENTS.length;i++){row.push(x[EVENTS[i].key]);row.push(x[EVENTS[i].key+"T"]);}
       row.push(x.dtr);row.push(nn(x.chargeOffset));row.push(String(x.memo||"").replace(/[\n,]/g," "));
+      var tl=(x.taplog||[]).map(function(e){return e.name+"@"+e.t+(e.prev!=null?"(訂正←元"+e.prev+")":"");}).join(" / ");
+      row.push('"'+tl.replace(/"/g,"")+'"');
       lines.push(row.join(","));}
     var blob=new Blob(["﻿"+lines.join("\n")],{type:"text/csv"});
     var a=document.createElement("a");a.href=URL.createObjectURL(blob);
