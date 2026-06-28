@@ -424,7 +424,7 @@ CotonohaSound.bindUnlock();
 <body>
   <div class="err" id="err"></div>
   <h1 style="display:flex;align-items:center;gap:8px">
-    <span>言ノ葉 焙煎タイマー <span style="color:var(--sub);font-size:12px">v1.5</span></span>
+    <span>言ノ葉 焙煎タイマー <span style="color:var(--sub);font-size:12px">v1.6</span></span>
     <button type="button" id="soundToggle" title="音のオン/オフ" aria-label="音のオン/オフ"
       style="margin-left:auto;font-size:18px;line-height:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 9px;cursor:pointer">🔊</button>
   </h1>
@@ -470,6 +470,8 @@ CotonohaSound.bindUnlock();
 
       <div class="panel">
         <div><label>豆（産地/銘柄）</label><input id="bean" list="beanList" autocomplete="off" placeholder="例）エチオピア イルガチェフェ"><datalist id="beanList"></datalist>
+          <div class="chips" id="beanChips" style="margin-top:8px"></div>
+          <div class="note" id="beanChipsHint" style="display:none;margin-top:4px">↑ 登録した豆をタップで選択（新しい順）。新しい豆は1回焼けば自動で並びます。</div>
           <div class="note" id="beanHint" style="display:none">同じ豆の過去カーブを薄く重ねて表示中（背面）。</div></div>
         <div style="margin-top:10px">
           <label>精製</label>
@@ -1362,6 +1364,31 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     }
     dl.innerHTML="";
     for(var j=0;j<names.length;j++){var op=document.createElement("option");op.value=names[j];dl.appendChild(op);}
+    renderBeanChips(names);
+  }
+  /* 登録した豆をタップで選べるチップ（打たず選ぶ＝認知負荷を下げる）。過去焙煎の豆名を新しい順で。
+     新しい豆は1回焼いて保存すれば自動でここに並ぶ（つよしさん要望2026-06-28）。*/
+  function renderBeanChips(names){
+    var box=$("beanChips"); if(!box)return;
+    if(!names){ names=[]; var list=getList(),seen={};
+      for(var i=0;i<list.length;i++){var b=String(list[i].bean||"");if(b!==""&&!seen[b]){seen[b]=1;names.push(b);}} }
+    box.innerHTML="";
+    var hint=$("beanChipsHint");
+    if(!names.length){ if(hint)hint.style.display="none"; return; }
+    if(hint)hint.style.display="block";
+    var cur=($("bean")&&$("bean").value)||"";
+    for(var j=0;j<Math.min(names.length,12);j++){(function(nm){
+      var c=document.createElement("button");
+      c.type="button"; c.className="chip"+(nm===cur?" sel":"");
+      c.setAttribute("data-v",nm); c.textContent=nm;
+      c.addEventListener("click",function(){
+        $("bean").value=nm;
+        var all=box.querySelectorAll(".chip"); for(var k=0;k<all.length;k++)all[k].classList.remove("sel");
+        c.classList.add("sel");
+        onBeanChange(); autosaveDraft();
+      });
+      box.appendChild(c);
+    })(names[j]);}
   }
   function saveRoast(){var rec=collect();var list=getList();list.unshift(rec);
     try{localStorage.setItem("cotonoha_roasts",JSON.stringify(list));}catch(e){}
