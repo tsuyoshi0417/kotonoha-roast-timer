@@ -424,7 +424,7 @@ CotonohaSound.bindUnlock();
 <body>
   <div class="err" id="err"></div>
   <h1 style="display:flex;align-items:center;gap:8px">
-    <span>言ノ葉 焙煎タイマー <span style="color:var(--sub);font-size:12px">v1.6</span></span>
+    <span>言ノ葉 焙煎タイマー <span style="color:var(--sub);font-size:12px">v1.7</span></span>
     <button type="button" id="soundToggle" title="音のオン/オフ" aria-label="音のオン/オフ"
       style="margin-left:auto;font-size:18px;line-height:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 9px;cursor:pointer">🔊</button>
   </h1>
@@ -473,6 +473,36 @@ CotonohaSound.bindUnlock();
           <div class="chips" id="beanChips" style="margin-top:8px"></div>
           <div class="note" id="beanChipsHint" style="display:none;margin-top:4px">↑ 登録した豆をタップで選択（新しい順）。新しい豆は1回焼けば自動で並びます。</div>
           <div class="note" id="beanHint" style="display:none">同じ豆の過去カーブを薄く重ねて表示中（背面）。</div></div>
+
+        <!-- ===== 豆の掲示板（豆を選ぶと展開＝次の1焼きの作業指示書）===== -->
+        <div id="beanBoard" style="display:none;margin-top:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <div id="bbBeanName" style="flex:1;min-width:0;font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)"></div>
+            <span id="bbCount" style="flex:0 0 auto;color:var(--accent2);font-weight:700;font-size:13px"></span>
+          </div>
+          <!-- 最重要：次はこう焼く（画面で唯一の金枠）-->
+          <div style="border:2px solid var(--accent2);border-radius:12px;padding:12px;background:var(--panel)">
+            <div style="display:flex;align-items:center;gap:8px">
+              <b style="flex:1;color:var(--accent2);font-size:15px">▸ 次はこう焼く</b>
+              <button type="button" id="bbEdit" style="flex:0 0 auto;width:auto;padding:6px 10px;font-size:12px;background:transparent;color:var(--sub);border:1px solid var(--line)">✎ 編集</button>
+            </div>
+            <div id="bbCaution" style="display:none;margin-top:8px;color:var(--ink);font-size:14px"></div>
+            <div id="bbNextText" style="margin-top:6px;color:var(--ink);font-size:16px;line-height:1.5"></div>
+            <div id="bbEditForm" style="display:none;margin-top:8px">
+              <div class="chips" id="bbPresetChips" style="margin-bottom:6px"></div>
+              <textarea id="bbNextInput" rows="2" placeholder="次の一手（例：満載NG・量を180gに・2ハゼ前で止め）" style="width:100%;box-sizing:border-box;padding:8px;font-size:15px"></textarea>
+              <input id="bbCautionInput" placeholder="この豆の地雷・注意（任意・例：満載NG）" style="margin-top:6px;width:100%;box-sizing:border-box;padding:8px">
+              <div class="ctrl" style="margin-top:8px">
+                <button type="button" id="bbSave" style="flex:1;background:var(--accent);color:#fff;min-height:48px">この豆に保存</button>
+                <button type="button" id="bbCancel" style="flex:.4;background:transparent;color:var(--sub);border:1px solid var(--line)">やめる</button>
+              </div>
+            </div>
+          </div>
+          <!-- 過去カルテ -->
+          <div id="bbHistory" style="margin-top:10px"></div>
+          <button type="button" id="bbMore" style="display:none;margin-top:6px;background:transparent;color:var(--sub);border:1px solid var(--line)">過去をもっと見る ▾</button>
+        </div>
+
         <div style="margin-top:10px">
           <label>精製</label>
           <div class="chips" id="procChips">
@@ -1390,6 +1420,95 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
       box.appendChild(c);
     })(names[j]);}
   }
+
+  /* ===== 豆の掲示板（つよしさん要望2026-06-28・会議＝師匠+デザインで設計）=====
+     豆を選ぶと「次の1焼きの作業指示書」を出す＝最上段に前回の"次の一手"(手書き)＋過去カルテ(自動)。
+     再現性を作りぶれを潰す道具。豆ノートは localStorage `cotonoha_bean_notes` ＋ RTDB同期。 */
+  var bbCurBean="", bbMoreOpen=false;
+  function escapeHtml(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  function getBeanNotes(){ try{ return JSON.parse(localStorage.getItem("cotonoha_bean_notes")||"{}"); }catch(e){ return {}; } }
+  function setBeanNotes(o){ try{ localStorage.setItem("cotonoha_bean_notes",JSON.stringify(o||{})); }catch(e){} }
+  function getBeanNote(bean){ var o=getBeanNotes(); return o[bean]||{}; }
+  function setBeanNote(bean,partial){
+    if(!bean)return;
+    var o=getBeanNotes(), cur=o[bean]||{};
+    for(var k in partial){ if(partial.hasOwnProperty(k))cur[k]=partial[k]; }
+    cur.updatedJST=nowJST();
+    o[bean]=cur; setBeanNotes(o);
+    try{ if(typeof Cloud!=="undefined"&&Cloud.pushBeanNote)Cloud.pushBeanNote(bean,cur); }catch(e){}
+  }
+  /* 焙煎度の目安＝重量減%＋2ハゼ有無から導出（師匠基準・あくまで目安）*/
+  function roastLevelLabel(rec){
+    var sc=(rec.sc!==undefined&&rec.sc!=="");
+    var loss=parseFloat(rec.loss);
+    if(sc){ return (!isNaN(loss)&&loss>=19)?"フレンチ寄り":"フルシティ"; }
+    if(isNaN(loss))return "—";
+    if(loss<13)return "ハイ手前"; if(loss<15)return "シティ"; if(loss<17)return "シティ〜FC"; return "フルシティ手前";
+  }
+  function beanRecordsFor(bean){
+    var list=getList(),out=[];
+    for(var i=0;i<list.length;i++){ if(String(list[i].bean||"")===bean)out.push(list[i]); }
+    return out; // getListは新しい順
+  }
+  function beanRecRow(rec){
+    var d=document.createElement("div");
+    d.style.cssText="border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-top:6px;background:var(--panel2)";
+    var day=String(rec.day||rec.date||"").slice(0,10);
+    var g=(rec.green!=null&&rec.green!=="")?(rec.green+"g"):"";
+    var loss=(rec.loss!=null&&rec.loss!=="")?("減"+rec.loss+"%"):"";
+    var total=(rec.drop!==undefined&&rec.drop!=="")?fmt(rec.drop):"";
+    var dtr=(rec.dtr!=null&&rec.dtr!=="")?(rec.dtr+"%"):"";
+    var lvl=roastLevelLabel(rec);
+    var top='<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">'+
+      '<span style="font-weight:700;color:var(--ink);font-size:13px">'+escapeHtml(day)+'</span>'+
+      '<span style="color:var(--sub);font-size:13px">'+escapeHtml(g+(g&&loss?" ":"")+loss)+'</span>'+
+      '<span style="flex:1;min-width:8px"></span>'+
+      (total?'<span style="color:var(--accent2);font-weight:700;font-variant-numeric:tabular-nums;font-size:14px">'+escapeHtml(total)+'</span>':'')+
+      (dtr?'<span style="color:var(--accent2);font-weight:700;font-variant-numeric:tabular-nums;font-size:14px">DTR'+escapeHtml(dtr)+'</span>':'')+
+      '<span style="color:var(--sub);font-size:13px">'+escapeHtml(lvl)+'</span></div>';
+    var memo=(rec.memo&&String(rec.memo).trim())?'<div style="margin-top:4px;color:var(--ink);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escapeHtml(rec.memo)+'</div>':'';
+    d.innerHTML=top+memo;
+    return d;
+  }
+  function renderBeanHistory(recs){
+    var box=$("bbHistory"), more=$("bbMore"); if(!box)return;
+    box.innerHTML="";
+    if(!recs.length){ box.innerHTML='<div class="note">この豆は初焙煎。焼けばここに記録が並びます。</div>'; if(more)more.style.display="none"; return; }
+    var shown=bbMoreOpen?recs.length:1;
+    for(var i=0;i<shown&&i<recs.length;i++){ box.appendChild(beanRecRow(recs[i])); }
+    if(more){ if(recs.length>1){ more.style.display="block"; more.textContent=bbMoreOpen?"閉じる ▲":("過去 "+(recs.length-1)+" 回を見る ▾"); } else more.style.display="none"; }
+  }
+  function showBeanBoard(bean){
+    var board=$("beanBoard"); if(!board)return;
+    bean=String(bean||"").trim();
+    if(!bean){ board.style.display="none"; return; }
+    if(bean!==bbCurBean)bbMoreOpen=false; // 別の豆に切り替えたら畳む
+    bbCurBean=bean; board.style.display="block";
+    $("bbBeanName").textContent=bean;
+    var recs=beanRecordsFor(bean);
+    $("bbCount").textContent=recs.length?("焙煎 "+recs.length+"回"):"初焙煎";
+    var note=getBeanNote(bean);
+    $("bbEditForm").style.display="none"; $("bbNextText").style.display="block";
+    var nx=$("bbNextText");
+    if(note.next&&String(note.next).trim()){ nx.textContent=note.next; nx.style.color="var(--ink)"; }
+    else { nx.textContent="まだ無し。「✎ 編集」で次の一手を書ける（次に開くとここに出ます）。"; nx.style.color="var(--sub)"; }
+    var ca=$("bbCaution");
+    if(note.caution&&String(note.caution).trim()){ ca.style.display="block"; ca.innerHTML='<span style="background:var(--warn);color:#fff;border-radius:6px;padding:2px 8px;font-size:12px;margin-right:6px">注意</span>'+escapeHtml(note.caution); }
+    else ca.style.display="none";
+    renderBeanHistory(recs);
+  }
+  var BB_PRESETS=["満載NG","量を◯gに","2ハゼ前で止め","火力 強め","火力 弱め","1ハゼを早める"];
+  function buildBbPresets(){
+    var box=$("bbPresetChips"); if(!box)return; box.innerHTML="";
+    for(var i=0;i<BB_PRESETS.length;i++){(function(p){
+      var c=document.createElement("button"); c.type="button"; c.className="chip"; c.textContent=p;
+      c.addEventListener("click",function(){ var ta=$("bbNextInput"); var v=(ta.value||"").trim(); ta.value=v?(v+"・"+p):p; });
+      box.appendChild(c);
+    })(BB_PRESETS[i]);}
+  }
+  function openBbEdit(){ var note=getBeanNote(bbCurBean); $("bbNextInput").value=note.next||""; $("bbCautionInput").value=note.caution||""; $("bbNextText").style.display="none"; $("bbEditForm").style.display="block"; }
+  function closeBbEdit(){ $("bbEditForm").style.display="none"; $("bbNextText").style.display="block"; }
+  function saveBbEdit(){ setBeanNote(bbCurBean,{next:($("bbNextInput").value||"").trim(),caution:($("bbCautionInput").value||"").trim()}); closeBbEdit(); showBeanBoard(bbCurBean); }
   function saveRoast(){var rec=collect();var list=getList();list.unshift(rec);
     try{localStorage.setItem("cotonoha_roasts",JSON.stringify(list));}catch(e){}
     renderHist();refreshBeanList();onBeanChange();
@@ -1857,6 +1976,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     var hint=$("beanHint");
     if(hint){ hint.style.display=(pastCurves().length>0)?"block":"none"; }
     drawGraph();
+    showBeanBoard($("bean").value);   // 豆を選ぶ/打つと掲示板を更新（選択/入力/復元/初期化 全経路を兼ねる）
   }
 
   /* ============================================================
@@ -1925,7 +2045,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
           renderHist(); refreshBeanList(); onBeanChange();
           pushAll(merged); // 統合結果をクラウドへ書き戻し（全端末で同一化）
           setState("同期済み（"+merged.length+"件）");
-          pullCups(); pullEsp(); pullSyp(); // カッピング・エスプレッソ・サイフォンも同期
+          pullCups(); pullEsp(); pullSyp(); pullBeanNotes(); // カッピング・抽出・豆ノートも同期
           syncing=false;
         }).catch(function(e){ setState("読込エラー（ローカルで動作）"); syncing=false; });
       }catch(e){ setState("読込エラー（ローカルで動作）"); syncing=false; }
@@ -2002,10 +2122,27 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     function pushDraft(d){ if(!ready||!uid||!d)return; try{ db.ref("users/"+uid+"/roastDraft").set(d).catch(function(){}); }catch(e){} }
     function clearDraft(){ if(!ready||!uid)return; try{ db.ref("users/"+uid+"/roastDraft").remove().catch(function(){}); }catch(e){} }
     function pushError(e){ if(!ready||!uid||!e)return; try{ db.ref("users/"+uid+"/roastErrors/"+safeKey(String(e.epoch))).set(e).catch(function(){}); }catch(_e){} }
+    /* 豆ノート（豆ごとの次の一手・地雷）。クラウド優先でローカルへマージ＝番頭/別端末が書いた申し送りが乗る。*/
+    function pullBeanNotes(){
+      if(!ready||!uid)return;
+      try{
+        db.ref("users/"+uid+"/beanNotes").once("value").then(function(snap){
+          var val=snap.val(); if(!val)return;
+          var local=getBeanNotes(), changed=false;
+          for(var k in val){ if(!val.hasOwnProperty(k))continue;
+            var c=val[k], l=local[k];
+            if(!l || (c.updatedJST&&l.updatedJST&&String(c.updatedJST)>String(l.updatedJST)) || (c.updatedJST&&!l.updatedJST)){ local[k]=c; changed=true; }
+          }
+          if(changed){ setBeanNotes(local); showBeanBoard($("bean").value); }
+        }).catch(function(){});
+      }catch(e){}
+    }
+    function pushBeanNote(bean,note){ if(!ready||!uid||!bean)return; try{ db.ref("users/"+uid+"/beanNotes/"+safeKey(bean)).set(note).catch(function(){}); }catch(e){} }
     return { init:init, login:login, logout:logout, pushOne:pushOne, deleteOne:deleteOne,
              pushCup:pushCup, deleteCup:deleteCup, pushEsp:pushEsp, deleteEsp:deleteEsp,
              pushSyp:pushSyp, deleteSyp:deleteSyp,
              pushDraft:pushDraft, clearDraft:clearDraft, pushError:pushError,
+             pushBeanNote:pushBeanNote,
              isOn:function(){return !!(ready&&uid);} };
   })();
 
@@ -2095,6 +2232,14 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   $("bean").addEventListener("input",onBeanChange);
   $("bean").addEventListener("change",onBeanChange);
   $("bean").addEventListener("input",autosaveDraft);  // 豆名を入れた瞬間から自動保管が始まる
+  /* 豆の掲示板の操作配線 */
+  buildBbPresets();
+  (function(){
+    var e=$("bbEdit"); if(e)e.addEventListener("click",openBbEdit);
+    var s=$("bbSave"); if(s)s.addEventListener("click",saveBbEdit);
+    var c=$("bbCancel"); if(c)c.addEventListener("click",closeBbEdit);
+    var m=$("bbMore"); if(m)m.addEventListener("click",function(){ bbMoreOpen=!bbMoreOpen; renderBeanHistory(beanRecordsFor(bbCurBean)); });
+  })();
   window.addEventListener("resize",drawGraph);
   var _lin=$("loginBtn"); if(_lin)_lin.addEventListener("click",function(){Cloud.login();});
   var _lout=$("logoutBtn"); if(_lout)_lout.addEventListener("click",function(){Cloud.logout();});
@@ -2154,7 +2299,11 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     getDraft:function(){ try{ return JSON.parse(localStorage.getItem(DRAFT_KEY)||"null"); }catch(e){ return null; } },
     getErrors:function(){ try{ return JSON.parse(localStorage.getItem(ERR_KEY)||"[]"); }catch(e){ return []; } },
     logEvent:function(type,detail){ try{ logAudit("ext:"+String(type),detail||{}); return true; }catch(e){ return false; } },
-    version:"1.5"
+    /* 豆の掲示板＝師匠/番頭が「次の一手・地雷」を豆ごとに下書きできる窓口。例）setBeanNote("エチオピア　G1 ハルスケ",{next:"量を180gに",caution:"満載NG"}) */
+    setBeanNote:function(bean,partial){ try{ setBeanNote(bean,partial||{}); if(($("bean").value||"")===bean)showBeanBoard(bean); return true; }catch(e){ return false; } },
+    getBeanNote:function(bean){ try{ return getBeanNote(bean); }catch(e){ return {}; } },
+    getBeanNotes:function(){ try{ return getBeanNotes(); }catch(e){ return {}; } },
+    version:"1.7"
   };
 })();
 </script>
