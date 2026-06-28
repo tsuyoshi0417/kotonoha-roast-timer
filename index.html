@@ -424,7 +424,7 @@ CotonohaSound.bindUnlock();
 <body>
   <div class="err" id="err"></div>
   <h1 style="display:flex;align-items:center;gap:8px">
-    <span>言ノ葉 焙煎タイマー <span style="color:var(--sub);font-size:12px">v1.7</span></span>
+    <span>言ノ葉 焙煎タイマー <span style="color:var(--sub);font-size:12px">v1.8</span></span>
     <button type="button" id="soundToggle" title="音のオン/オフ" aria-label="音のオン/オフ"
       style="margin-left:auto;font-size:18px;line-height:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 9px;cursor:pointer">🔊</button>
   </h1>
@@ -1433,7 +1433,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     if(!bean)return;
     var o=getBeanNotes(), cur=o[bean]||{};
     for(var k in partial){ if(partial.hasOwnProperty(k))cur[k]=partial[k]; }
-    cur.updatedJST=nowJST();
+    cur.bean=bean; cur.updatedJST=nowJST(); // 元の豆名を埋め込む＝クラウドのsafeKeyから引き直せる
     o[bean]=cur; setBeanNotes(o);
     try{ if(typeof Cloud!=="undefined"&&Cloud.pushBeanNote)Cloud.pushBeanNote(bean,cur); }catch(e){}
   }
@@ -2130,8 +2130,8 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
           var val=snap.val(); if(!val)return;
           var local=getBeanNotes(), changed=false;
           for(var k in val){ if(!val.hasOwnProperty(k))continue;
-            var c=val[k], l=local[k];
-            if(!l || (c.updatedJST&&l.updatedJST&&String(c.updatedJST)>String(l.updatedJST)) || (c.updatedJST&&!l.updatedJST)){ local[k]=c; changed=true; }
+            var c=val[k]; var key=(c&&c.bean)||k; var l=local[key]; // クラウドのキーはsafeKey化されてるので元の豆名(c.bean)で引き直す
+            if(!l || (c.updatedJST&&l.updatedJST&&String(c.updatedJST)>String(l.updatedJST)) || (c.updatedJST&&!l.updatedJST)){ local[key]=c; changed=true; }
           }
           if(changed){ setBeanNotes(local); showBeanBoard($("bean").value); }
         }).catch(function(){});
